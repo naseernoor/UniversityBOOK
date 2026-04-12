@@ -37,7 +37,8 @@ Create `.env` from `.env.example` and set:
 - `NEXTAUTH_SECRET`
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (optional)
 - `APPLE_ID` / `APPLE_CLIENT_SECRET` (optional)
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (required for sending verification/reset emails)
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` (required for sending verification/reset emails)
+- `SMTP_FROM` (optional; falls back to `SMTP_USER` if omitted)
 - `SMTP_SECURE` (`true` or `false`, optional; default `false`)
 - `BLOB_READ_WRITE_TOKEN` (required on Vercel for persistent uploads)
 

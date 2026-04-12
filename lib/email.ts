@@ -17,8 +17,7 @@ const canSendEmail = () =>
     process.env.SMTP_HOST &&
       process.env.SMTP_PORT &&
       process.env.SMTP_USER &&
-      process.env.SMTP_PASS &&
-      process.env.SMTP_FROM
+      process.env.SMTP_PASS
   );
 
 const getTransporter = () => {
@@ -67,8 +66,10 @@ export const sendVerificationEmail = async (params: {
     return;
   }
 
+  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER;
+
   await transporter.sendMail({
-    from: process.env.SMTP_FROM,
+    from,
     to: params.toEmail,
     subject: "Verify your UniversityBOOK account",
     text,
@@ -106,8 +107,10 @@ export const sendPasswordResetEmail = async (params: {
     return;
   }
 
+  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER;
+
   await transporter.sendMail({
-    from: process.env.SMTP_FROM,
+    from,
     to: params.toEmail,
     subject: "Reset your UniversityBOOK password",
     text,

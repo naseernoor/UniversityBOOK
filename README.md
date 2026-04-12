@@ -6,6 +6,9 @@ Full-stack university marks tracking system built with Next.js + Prisma.
 
 - Registration and profile with degree level (`Bachelor`, `Master`, `PhD`)
 - Login with credentials, Google, and Apple
+- Email verification activation for credential-based signups
+- Forgot password and secure reset flow
+- Live username availability check on registration
 - Semester templates (2 semesters/year) + custom semester option
 - Subject-level management with edit/delete, teacher name, and lecture uploads
 - Per-semester and overall percentage analytics
@@ -13,6 +16,7 @@ Full-stack university marks tracking system built with Next.js + Prisma.
 - Minimum passing marks and retake queues
 - Friend requests and per-semester visibility control
 - Profile photo upload
+- UTF-8 support for Persian/Pashto/English text inputs across profile and subjects
 
 ## Stack
 
@@ -33,9 +37,13 @@ Create `.env` from `.env.example` and set:
 - `NEXTAUTH_SECRET`
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (optional)
 - `APPLE_ID` / `APPLE_CLIENT_SECRET` (optional)
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (required for sending verification/reset emails)
+- `SMTP_SECURE` (`true` or `false`, optional; default `false`)
 - `BLOB_READ_WRITE_TOKEN` (required on Vercel for persistent uploads)
 
 If `BLOB_READ_WRITE_TOKEN` is not set, uploads fall back to local filesystem (`public/uploads`).
+
+If SMTP variables are not set, verification/reset links are logged on the server instead of being emailed.
 
 ## Local setup
 
@@ -68,4 +76,3 @@ npm run build
 - Use managed Postgres (Neon/Supabase/Vercel Postgres)
 - Use Vercel Blob for uploads
 - Keep `NEXTAUTH_URL` as your production domain (for example `https://your-app.vercel.app`)
-

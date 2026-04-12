@@ -10,7 +10,7 @@ const usernameSchema = z
   .trim()
   .min(3)
   .max(30)
-  .regex(/^[a-zA-Z0-9_.-]+$/, "Username can only include letters, numbers, ., _, -");
+  .regex(/^[\p{L}\p{N}_.-]+$/u, "Username can only include letters, numbers, ., _, -");
 
 export async function GET() {
   const session = await getServerAuthSession();

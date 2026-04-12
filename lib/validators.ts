@@ -14,6 +14,8 @@ const cleanedOptionalString = z
     return trimmed.length > 0 ? trimmed : undefined;
   });
 
+const usernameRegex = /^[\p{L}\p{N}_.-]+$/u;
+
 const lectureMaterialSchema = z.object({
   name: z.string().trim().min(1).max(120),
   url: z.string().trim().min(1).max(500)
@@ -49,7 +51,7 @@ export const registerSchema = profileDetailsSchema.extend({
     .trim()
     .min(3)
     .max(30)
-    .regex(/^[a-zA-Z0-9_.-]+$/, "Username can only include letters, numbers, ., _, -"),
+    .regex(usernameRegex, "Username can only include letters, numbers, ., _, -"),
   password: z.string().min(8, "Password must be at least 8 characters")
 });
 
@@ -61,7 +63,7 @@ export const onboardingSchema = profileDetailsSchema.extend({
     .trim()
     .min(3)
     .max(30)
-    .regex(/^[a-zA-Z0-9_.-]+$/, "Username can only include letters, numbers, ., _, -")
+    .regex(usernameRegex, "Username can only include letters, numbers, ., _, -")
 });
 
 export const profileTargetSchema = z.object({

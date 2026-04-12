@@ -799,6 +799,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
         <Field label="Name" required>
           <input
             className="input"
+            dir="auto"
             value={draft.name}
             onChange={(event) => updateDraftSubject(mode, subjectIndex, "name", event.target.value)}
             required
@@ -808,6 +809,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
         <Field label="Code (Optional)">
           <input
             className="input"
+            dir="auto"
             value={draft.code}
             onChange={(event) => updateDraftSubject(mode, subjectIndex, "code", event.target.value)}
           />
@@ -816,6 +818,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
         <Field label="Teacher Name (Optional)">
           <input
             className="input"
+            dir="auto"
             value={draft.teacherName}
             onChange={(event) =>
               updateDraftSubject(mode, subjectIndex, "teacherName", event.target.value)
@@ -966,6 +969,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
             <Field label="Custom Semester Name" required>
               <input
                 className="input"
+                dir="auto"
                 value={draft.customName}
                 onChange={(event) => {
                   const value = event.target.value;
@@ -1068,6 +1072,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 <Field label="Username" required>
                   <input
                     className="input"
+                    dir="auto"
                     value={profileForm.username}
                     onChange={(event) =>
                       setProfileForm((previous) => ({
@@ -1097,6 +1102,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 <Field label="First Name" required>
                   <input
                     className="input"
+                    dir="auto"
                     value={profileForm.firstName}
                     onChange={(event) =>
                       setProfileForm((previous) => ({
@@ -1111,6 +1117,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 <Field label="Last Name" required>
                   <input
                     className="input"
+                    dir="auto"
                     value={profileForm.lastName}
                     onChange={(event) =>
                       setProfileForm((previous) => ({
@@ -1125,6 +1132,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 <Field label="Father Name" required>
                   <input
                     className="input"
+                    dir="auto"
                     value={profileForm.fatherName}
                     onChange={(event) =>
                       setProfileForm((previous) => ({
@@ -1139,6 +1147,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 <Field label="University" required>
                   <input
                     className="input"
+                    dir="auto"
                     value={profileForm.university}
                     onChange={(event) =>
                       setProfileForm((previous) => ({
@@ -1153,6 +1162,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 <Field label="Faculty" required>
                   <input
                     className="input"
+                    dir="auto"
                     value={profileForm.faculty}
                     onChange={(event) =>
                       setProfileForm((previous) => ({
@@ -1167,6 +1177,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 <Field label="Department" required>
                   <input
                     className="input"
+                    dir="auto"
                     value={profileForm.department}
                     onChange={(event) =>
                       setProfileForm((previous) => ({

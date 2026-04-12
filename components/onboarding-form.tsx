@@ -103,6 +103,7 @@ export default function OnboardingForm({ defaultEmail }: OnboardingFormProps) {
         <Field label="Username" required>
           <input
             className="input"
+            dir="auto"
             value={form.username}
             onChange={(event) => setField("username", event.target.value)}
             required
@@ -127,6 +128,7 @@ export default function OnboardingForm({ defaultEmail }: OnboardingFormProps) {
         <Field label="First Name" required>
           <input
             className="input"
+            dir="auto"
             value={form.firstName}
             onChange={(event) => setField("firstName", event.target.value)}
             required
@@ -136,6 +138,7 @@ export default function OnboardingForm({ defaultEmail }: OnboardingFormProps) {
         <Field label="Last Name" required>
           <input
             className="input"
+            dir="auto"
             value={form.lastName}
             onChange={(event) => setField("lastName", event.target.value)}
             required
@@ -145,6 +148,7 @@ export default function OnboardingForm({ defaultEmail }: OnboardingFormProps) {
         <Field label="Father Name" required>
           <input
             className="input"
+            dir="auto"
             value={form.fatherName}
             onChange={(event) => setField("fatherName", event.target.value)}
             required
@@ -154,6 +158,7 @@ export default function OnboardingForm({ defaultEmail }: OnboardingFormProps) {
         <Field label="University" required>
           <input
             className="input"
+            dir="auto"
             value={form.university}
             onChange={(event) => setField("university", event.target.value)}
             required
@@ -163,6 +168,7 @@ export default function OnboardingForm({ defaultEmail }: OnboardingFormProps) {
         <Field label="Faculty" required>
           <input
             className="input"
+            dir="auto"
             value={form.faculty}
             onChange={(event) => setField("faculty", event.target.value)}
             required
@@ -172,6 +178,7 @@ export default function OnboardingForm({ defaultEmail }: OnboardingFormProps) {
         <Field label="Department" required>
           <input
             className="input"
+            dir="auto"
             value={form.department}
             onChange={(event) => setField("department", event.target.value)}
             required

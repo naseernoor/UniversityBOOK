@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type AuthProvider = {
   id: string;
@@ -12,11 +12,25 @@ type AuthProvider = {
 
 export default function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
   const [providers, setProviders] = useState<AuthProvider[]>([]);
+
+  const showRegistrationHint = useMemo(
+    () => searchParams.get("registered") === "1",
+    [searchParams]
+  );
+
+  useEffect(() => {
+    if (showRegistrationHint) {
+      setInfo("Registration successful. Please verify your email before logging in.");
+    }
+  }, [showRegistrationHint]);
 
   useEffect(() => {
     const loadProviders = async () => {
@@ -34,6 +48,7 @@ export default function LoginForm() {
   const handleCredentialsLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    setInfo(null);
     setLoading(true);
 
     const result = await signIn("credentials", {
@@ -45,12 +60,44 @@ export default function LoginForm() {
     setLoading(false);
 
     if (!result || result.error) {
-      setError("Invalid email or password");
+      if (result?.error?.includes("EMAIL_NOT_VERIFIED")) {
+        setError("Email not verified. Please verify your email first.");
+      } else {
+        setError("Invalid email or password");
+      }
       return;
     }
 
     router.push("/dashboard");
     router.refresh();
+  };
+
+  const resendVerification = async () => {
+    if (!email.trim()) {
+      setError("Enter your email first to resend verification.");
+      return;
+    }
+
+    setResendingVerification(true);
+    setError(null);
+
+    const response = await fetch("/api/auth/resend-verification", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ email: email.trim() })
+    });
+
+    const data = (await response.json()) as { message?: string; error?: string };
+    setResendingVerification(false);
+
+    if (!response.ok) {
+      setError(data.error ?? "Failed to resend verification");
+      return;
+    }
+
+    setInfo(data.message ?? "If your account exists, we sent a verification email.");
   };
 
   return (
@@ -90,10 +137,29 @@ export default function LoginForm() {
             />
           </div>
 
+          <div className="text-right">
+            <Link
+              href={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ""}`}
+              className="text-sm font-semibold text-brand-700 underline-offset-4 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
+
           {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
+          {info ? <p className="text-sm font-medium text-emerald-700">{info}</p> : null}
 
           <button type="submit" className="btn-primary w-full" disabled={loading}>
             {loading ? "Logging in..." : "Login"}
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary w-full"
+            onClick={resendVerification}
+            disabled={resendingVerification}
+          >
+            {resendingVerification ? "Resending..." : "Resend verification email"}
           </button>
         </form>
 

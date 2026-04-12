@@ -1,7 +1,9 @@
 import { hash } from "bcryptjs";
 import { NextResponse } from "next/server";
 
+import { sendVerificationEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
+import { createEmailVerificationToken } from "@/lib/tokens";
 import { registerSchema } from "@/lib/validators";
 
 export async function POST(request: Request) {
@@ -71,8 +73,15 @@ export async function POST(request: Request) {
       }
     });
 
+    const verificationToken = await createEmailVerificationToken(email);
+    await sendVerificationEmail({
+      toEmail: email,
+      firstName: data.firstName,
+      token: verificationToken
+    });
+
     return NextResponse.json({
-      message: "Registration successful",
+      message: "Registration successful. Please verify your email to activate your account.",
       user
     });
   } catch (error) {

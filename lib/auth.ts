@@ -35,6 +35,10 @@ const providers: NextAuthOptions["providers"] = [
         return null;
       }
 
+      if (!user.emailVerified) {
+        throw new Error("EMAIL_NOT_VERIFIED");
+      }
+
       return {
         id: user.id,
         name: user.name,
@@ -113,14 +117,15 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
-    async signIn({ user }) {
+    async signIn({ user, account }) {
       if (user.email) {
         await prisma.user.update({
           where: {
             email: user.email
           },
           data: {
-            name: user.name ?? undefined
+            name: user.name ?? undefined,
+            ...(account?.provider !== "credentials" ? { emailVerified: new Date() } : {})
           }
         });
       }

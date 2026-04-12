@@ -36,6 +36,14 @@ const getTransporter = () => {
   });
 };
 
+const logFallbackLink = (type: "verification" | "password reset", url: string) => {
+  if (process.env.NODE_ENV === "production") {
+    console.warn(`${type} email link generated but SMTP delivery failed`);
+    return;
+  }
+  console.warn(`Fallback ${type} link:`, url);
+};
+
 export const sendVerificationEmail = async (params: {
   toEmail: string;
   firstName?: string | null;
@@ -62,7 +70,7 @@ export const sendVerificationEmail = async (params: {
 
   const transporter = getTransporter();
   if (!transporter) {
-    console.warn("SMTP is not configured. Verification email link:", verifyUrl);
+    logFallbackLink("verification", verifyUrl);
     return false;
   }
 
@@ -79,7 +87,7 @@ export const sendVerificationEmail = async (params: {
     return true;
   } catch (error) {
     console.error("Failed to send verification email:", error);
-    console.warn("Fallback verification link:", verifyUrl);
+    logFallbackLink("verification", verifyUrl);
     return false;
   }
 };
@@ -110,7 +118,7 @@ export const sendPasswordResetEmail = async (params: {
 
   const transporter = getTransporter();
   if (!transporter) {
-    console.warn("SMTP is not configured. Password reset link:", resetUrl);
+    logFallbackLink("password reset", resetUrl);
     return false;
   }
 
@@ -127,7 +135,7 @@ export const sendPasswordResetEmail = async (params: {
     return true;
   } catch (error) {
     console.error("Failed to send password reset email:", error);
-    console.warn("Fallback password reset link:", resetUrl);
+    logFallbackLink("password reset", resetUrl);
     return false;
   }
 };

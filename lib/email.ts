@@ -25,10 +25,17 @@ const getTransporter = () => {
     return null;
   }
 
+  const smtpPort = Number(process.env.SMTP_PORT);
+  const smtpSecureRaw = process.env.SMTP_SECURE;
+  const smtpSecure =
+    typeof smtpSecureRaw === "string" && smtpSecureRaw.length > 0
+      ? smtpSecureRaw.toLowerCase() === "true"
+      : smtpPort === 465;
+
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: String(process.env.SMTP_SECURE).toLowerCase() === "true",
+    port: smtpPort,
+    secure: smtpSecure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS

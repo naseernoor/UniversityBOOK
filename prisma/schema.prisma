@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum DegreeLevel {
+  BACHELOR
+  MASTER
+  PHD
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  username      String?   @unique
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  profile   Profile?
+  semesters Semester[]
+
+  accounts Account[]
+  sessions Session[]
+
+  sentFriendRequests     FriendRequest[]     @relation("SentFriendRequests")
+  receivedFriendRequests FriendRequest[]     @relation("ReceivedFriendRequests")
+  visibleSemesters       SemesterVisibility[] @relation("SemesterVisibleTo")
+}
+
+model Profile {
+  id                  String      @id @default(cuid())
+  userId              String      @unique
+  firstName           String
+  lastName            String
+  fatherName          String
+  university          String
+  faculty             String
+  department          String
+  degreeLevel         DegreeLevel @default(BACHELOR)
+  yearOfEnrollment    Int
+  dateOfBirth         DateTime
+  totalSemesters      Int         @default(8)
+  minimumPassingMarks Float       @default(50)
+  idealPercentage     Float?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Semester {
+  id        String   @id @default(cuid())
+  userId    String
+  index     Int
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjects  Subject[]
+  visibility SemesterVisibility[]
+
+  @@unique([userId, index])
+}
+
+model Subject {
+  id                   String   @id @default(cuid())
+  semesterId           String
+  name                 String
+  credits              Float
+  code                 String?
+  teacherName          String?
+  lectureMaterialsJson String?
+  chance               Int
+  score                Float
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  semester Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+}
+
+model SemesterVisibility {
+  id         String   @id @default(cuid())
+  semesterId String
+  viewerId   String
+  createdAt  DateTime @default(now())
+
+  semester Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  viewer   User     @relation("SemesterVisibleTo", fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([semesterId, viewerId])
+}
+
+model FriendRequest {
+  id          String              @id @default(cuid())
+  senderId    String
+  recipientId String
+  status      FriendRequestStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  sender    User @relation("SentFriendRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User @relation("ReceivedFriendRequests", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, recipientId])
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

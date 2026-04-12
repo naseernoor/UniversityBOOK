@@ -63,18 +63,25 @@ export const sendVerificationEmail = async (params: {
   const transporter = getTransporter();
   if (!transporter) {
     console.warn("SMTP is not configured. Verification email link:", verifyUrl);
-    return;
+    return false;
   }
 
   const from = process.env.SMTP_FROM ?? process.env.SMTP_USER;
 
-  await transporter.sendMail({
-    from,
-    to: params.toEmail,
-    subject: "Verify your UniversityBOOK account",
-    text,
-    html
-  });
+  try {
+    await transporter.sendMail({
+      from,
+      to: params.toEmail,
+      subject: "Verify your UniversityBOOK account",
+      text,
+      html
+    });
+    return true;
+  } catch (error) {
+    console.error("Failed to send verification email:", error);
+    console.warn("Fallback verification link:", verifyUrl);
+    return false;
+  }
 };
 
 export const sendPasswordResetEmail = async (params: {
@@ -104,16 +111,23 @@ export const sendPasswordResetEmail = async (params: {
   const transporter = getTransporter();
   if (!transporter) {
     console.warn("SMTP is not configured. Password reset link:", resetUrl);
-    return;
+    return false;
   }
 
   const from = process.env.SMTP_FROM ?? process.env.SMTP_USER;
 
-  await transporter.sendMail({
-    from,
-    to: params.toEmail,
-    subject: "Reset your UniversityBOOK password",
-    text,
-    html
-  });
+  try {
+    await transporter.sendMail({
+      from,
+      to: params.toEmail,
+      subject: "Reset your UniversityBOOK password",
+      text,
+      html
+    });
+    return true;
+  } catch (error) {
+    console.error("Failed to send password reset email:", error);
+    console.warn("Fallback password reset link:", resetUrl);
+    return false;
+  }
 };

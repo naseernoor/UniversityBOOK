@@ -9,8 +9,13 @@ Full-stack university marks tracking system built with Next.js + Prisma.
 - Email verification activation for credential-based signups
 - Forgot password and secure reset flow
 - Live username availability check on registration
-- Semester templates (2 semesters/year) + custom semester option
-- Subject-level management with edit/delete, teacher name, and lecture uploads
+- Manual semester numbering constrained by profile total semesters (for example `01` to `09`)
+- Semester status (`ONGOING` / `FINISHED`) where only finished semesters count in overall percentage
+- Subject-level management with edit/delete and optional `subject code`, `teacher name`, and lecture uploads
+- Excel export/import for marks with row-level validation issues on import
+- Stylish transcript PDF export with field-visibility controls
+- Feed-first dashboard with profile/add-semester views
+- Social posts: text posts, share semesters, share overall percentage, likes, comments, and public/friends visibility
 - Per-semester and overall percentage analytics
 - Chance analytics (2nd/3rd chance counts)
 - Minimum passing marks and retake queues

@@ -29,14 +29,38 @@ enum PostVisibility {
   PUBLIC
 }
 
+enum ProfileVisibility {
+  PUBLIC
+  FRIENDS
+  PRIVATE
+}
+
+enum TwoFactorMethod {
+  EMAIL
+  PHONE
+}
+
+enum PostReactionType {
+  LIKE
+  LOVE
+  HAHA
+  WOW
+  SAD
+  ANGRY
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
   username      String?   @unique
   email         String?   @unique
   emailVerified DateTime?
+  pendingEmail  String?
   image         String?
   passwordHash  String?
+  twoFactorEnabled Boolean @default(false)
+  twoFactorMethod  TwoFactorMethod @default(EMAIL)
+  twoFactorPhone   String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -69,6 +93,9 @@ model Profile {
   totalSemesters      Int         @default(8)
   minimumPassingMarks Float       @default(50)
   idealPercentage     Float?
+  profileVisibility   ProfileVisibility @default(FRIENDS)
+  allowFriendRequests Boolean      @default(true)
+  defaultPostVisibility PostVisibility @default(FRIENDS)
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
@@ -126,6 +153,7 @@ model PostLike {
   id        String   @id @default(cuid())
   postId    String
   userId    String
+  reactionType PostReactionType @default(LIKE)
   createdAt DateTime @default(now())
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)

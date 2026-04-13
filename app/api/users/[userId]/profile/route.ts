@@ -69,13 +69,48 @@ export async function GET(_request: Request, { params }: Params) {
 
   const relationshipStatus = await getRelationshipStatus(session.user.id, targetUser.id);
 
-  if (relationshipStatus !== "FRIENDS") {
+  const profileVisibility = targetUser.profile?.profileVisibility ?? "FRIENDS";
+
+  if (profileVisibility === "PRIVATE" && relationshipStatus !== "FRIENDS") {
+    return NextResponse.json(
+      {
+        error: "This profile is private"
+      },
+      { status: 403 }
+    );
+  }
+
+  if (profileVisibility === "FRIENDS" && relationshipStatus !== "FRIENDS") {
     return NextResponse.json(
       {
         error: "Only friends can view this profile"
       },
       { status: 403 }
     );
+  }
+
+  if (profileVisibility === "PUBLIC" && relationshipStatus !== "FRIENDS") {
+    return NextResponse.json({
+      user: {
+        id: targetUser.id,
+        name: targetUser.name,
+        username: targetUser.username,
+        email: null,
+        image: targetUser.image,
+        profile: targetUser.profile
+      },
+      semesters: [],
+      overallPercentage: 0,
+      projection: null,
+      chanceStats: {
+        secondChanceCount: 0,
+        thirdChanceCount: 0
+      },
+      retakeQueues: {
+        needSecondChance: [],
+        needThirdChance: []
+      }
+    });
   }
 
   const semesters = await prisma.semester.findMany({

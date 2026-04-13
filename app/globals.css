@@ -1,6 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import "@fontsource/vazirmatn/400.css";
+@import "@fontsource/vazirmatn/600.css";
+@import "@fontsource/vazirmatn/700.css";
+@import "@fontsource/amiri/400.css";
+@import "@fontsource/amiri/700.css";
 
 :root {
   color-scheme: light;
@@ -68,4 +73,12 @@ h6 {
 
 .nav-pill {
   @apply rounded-lg px-3 py-1.5 transition hover:bg-brand-100;
+}
+
+.font-persian {
+  font-family: "Vazirmatn", "Amiri", "Noto Naskh Arabic", "Tahoma", sans-serif;
+}
+
+.font-pashto {
+  font-family: "Amiri", "Vazirmatn", "Noto Naskh Arabic", "Tahoma", sans-serif;
 }

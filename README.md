@@ -1,6 +1,6 @@
-# MarksTracker
+# UniBOOK
 
-Full-stack university marks tracking system built with Next.js + Prisma.
+Full-stack university marks, transcript, friends, and social study platform built with Next.js + Prisma.
 
 ## Core features
 
@@ -8,14 +8,17 @@ Full-stack university marks tracking system built with Next.js + Prisma.
 - Login with credentials, Google, and Apple
 - Email verification activation for credential-based signups
 - Forgot password and secure reset flow
+- Optional two-factor login by email or phone (Twilio SMS if configured)
+- Security settings: password change, privacy controls, email-change verification
 - Live username availability check on registration
 - Manual semester numbering constrained by profile total semesters (for example `01` to `09`)
 - Semester status (`ONGOING` / `FINISHED`) where only finished semesters count in overall percentage
 - Subject-level management with edit/delete and optional `subject code`, `teacher name`, and lecture uploads
 - Excel export/import for marks with row-level validation issues on import
-- Stylish transcript PDF export with field-visibility controls
+- Stylish transcript PDF export with field-visibility controls and Persian/Pashto-friendly fonts
 - Feed-first dashboard with profile/add-semester views
-- Social posts: text posts, share semesters, share overall percentage, likes, comments, and public/friends visibility
+- Social posts: text posts, share semesters, share overall percentage, modern reactions, comments, and public/friends visibility
+- Friends by request/approval flow with remove-friend support
 - Per-semester and overall percentage analytics
 - Chance analytics (2nd/3rd chance counts)
 - Minimum passing marks and retake queues
@@ -45,6 +48,7 @@ Create `.env` from `.env.example` and set:
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` (required for sending verification/reset emails)
 - `SMTP_FROM` (optional; falls back to `SMTP_USER` if omitted)
 - `SMTP_SECURE` (`true` or `false`, optional; defaults to `true` for port `465`, otherwise `false`)
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_PHONE` (optional, required for phone-based 2FA SMS)
 - `BLOB_READ_WRITE_TOKEN` (required on Vercel for persistent uploads)
 
 If `BLOB_READ_WRITE_TOKEN` is not set, uploads fall back to local filesystem (`public/uploads`).

@@ -24,6 +24,7 @@ type SearchResult = {
     university: string;
   } | null;
   relationshipStatus: "NONE" | "PENDING_SENT" | "PENDING_RECEIVED" | "FRIENDS";
+  acceptsRequests?: boolean;
 };
 
 type IncomingRequest = {
@@ -158,6 +159,31 @@ export default function FriendsClient() {
     await loadData();
   };
 
+  const removeFriend = async (friendId: string) => {
+    setError(null);
+    setMessage(null);
+
+    const shouldRemove = window.confirm("Remove this friend?");
+    if (!shouldRemove) {
+      return;
+    }
+
+    const response = await fetch(`/api/friends/${friendId}`, {
+      method: "DELETE"
+    });
+
+    const data = (await response.json()) as { error?: string; message?: string };
+
+    if (!response.ok) {
+      setError(data.error ?? "Could not remove friend");
+      return;
+    }
+
+    setMessage(data.message ?? "Friend removed");
+    await searchUsers();
+    await loadData();
+  };
+
   return (
     <div className="space-y-6">
       <section className="panel bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white">
@@ -207,9 +233,10 @@ export default function FriendsClient() {
                     <button
                       type="button"
                       className="btn-secondary"
+                      disabled={user.acceptsRequests === false}
                       onClick={() => sendRequest(user.id)}
                     >
-                      Add friend
+                      {user.acceptsRequests === false ? "Requests closed" : "Add friend"}
                     </button>
                   ) : null}
                   {user.relationshipStatus === "PENDING_SENT" ? (
@@ -318,6 +345,9 @@ export default function FriendsClient() {
               <Link href={`/user/${friend.id}`} className="btn-secondary">
                 View shared profile
               </Link>
+              <button type="button" className="btn-secondary" onClick={() => removeFriend(friend.id)}>
+                Remove friend
+              </button>
             </article>
           ))
         )}

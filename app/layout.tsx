@@ -6,8 +6,8 @@ import Providers from "@/components/providers";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
-  title: "MarksTracker",
-  description: "Track university semester marks, percentages, and friend visibility"
+  title: "UniBOOK",
+  description: "UniBOOK - track university marks, transcripts, friends, and social study feed"
 };
 
 type RootLayoutProps = {

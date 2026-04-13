@@ -15,6 +15,8 @@ export default function LoginForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,12 +56,23 @@ export default function LoginForm() {
     const result = await signIn("credentials", {
       email,
       password,
+      twoFactorCode: twoFactorCode.trim(),
       redirect: false
     });
 
     setLoading(false);
 
     if (!result || result.error) {
+      if (result?.error?.includes("TWO_FACTOR_REQUIRED")) {
+        setRequiresTwoFactor(true);
+        setInfo("A security code was sent. Enter it to finish login.");
+        return;
+      }
+      if (result?.error?.includes("INVALID_TWO_FACTOR_CODE")) {
+        setRequiresTwoFactor(true);
+        setError("Invalid or expired two-factor code.");
+        return;
+      }
       if (result?.error?.includes("EMAIL_NOT_VERIFIED")) {
         setError("Email not verified. Please verify your email first.");
       } else {
@@ -118,7 +131,11 @@ export default function LoginForm() {
               type="email"
               className="input"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setRequiresTwoFactor(false);
+                setTwoFactorCode("");
+              }}
               required
             />
           </div>
@@ -132,10 +149,32 @@ export default function LoginForm() {
               type="password"
               className="input"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setRequiresTwoFactor(false);
+                setTwoFactorCode("");
+              }}
               required
             />
           </div>
+
+          {requiresTwoFactor ? (
+            <div>
+              <label className="label" htmlFor="two-factor-code">
+                Security Code
+              </label>
+              <input
+                id="two-factor-code"
+                type="text"
+                className="input"
+                value={twoFactorCode}
+                onChange={(event) => setTwoFactorCode(event.target.value)}
+                inputMode="numeric"
+                placeholder="Enter 6-digit code"
+                required
+              />
+            </div>
+          ) : null}
 
           <div className="text-right">
             <Link

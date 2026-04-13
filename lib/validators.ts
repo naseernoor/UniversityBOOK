@@ -107,10 +107,13 @@ export const friendRequestActionSchema = z.object({
 });
 
 export const postVisibilitySchema = z.enum(["FRIENDS", "PUBLIC"]);
+export const profileVisibilitySchema = z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]);
+export const twoFactorMethodSchema = z.enum(["EMAIL", "PHONE"]);
+export const reactionTypeSchema = z.enum(["LIKE", "LOVE", "HAHA", "WOW", "SAD", "ANGRY"]);
 
 export const createPostSchema = z.object({
   content: z.string().trim().max(2000).default(""),
-  visibility: postVisibilitySchema.default("FRIENDS"),
+  visibility: postVisibilitySchema.optional(),
   includeOverallPercentage: z.boolean().optional().default(false),
   sharedSemesterIds: z.array(z.string().min(1)).max(20).default([])
 }).superRefine((value, context) => {
@@ -129,4 +132,42 @@ export const createPostSchema = z.object({
 
 export const createCommentSchema = z.object({
   content: z.string().trim().min(1).max(1000)
+});
+
+export const postReactionSchema = z.object({
+  reaction: z.union([reactionTypeSchema, z.literal("NONE")]).default("LIKE")
+});
+
+export const securitySettingsSchema = z.object({
+  profileVisibility: profileVisibilitySchema,
+  allowFriendRequests: z.boolean(),
+  defaultPostVisibility: postVisibilitySchema,
+  twoFactorEnabled: z.boolean(),
+  twoFactorMethod: twoFactorMethodSchema,
+  twoFactorPhone: cleanedOptionalString
+}).superRefine((value, context) => {
+  if (value.twoFactorEnabled && value.twoFactorMethod === "PHONE" && !value.twoFactorPhone) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["twoFactorPhone"],
+      message: "Phone number is required for phone 2FA"
+    });
+  }
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(8),
+  newPassword: z.string().min(8)
+}).superRefine((value, context) => {
+  if (value.currentPassword === value.newPassword) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["newPassword"],
+      message: "New password must be different from current password"
+    });
+  }
+});
+
+export const emailChangeRequestSchema = z.object({
+  newEmail: z.string().trim().email()
 });

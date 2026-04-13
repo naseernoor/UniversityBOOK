@@ -7,6 +7,9 @@ import { DEGREE_DEFAULT_SEMESTERS, DEGREE_LABELS, DegreeLevel } from "@/lib/acad
 
 type SemesterStatus = "ONGOING" | "FINISHED";
 type PostVisibility = "FRIENDS" | "PUBLIC";
+type PostReaction = "LIKE" | "LOVE" | "HAHA" | "WOW" | "SAD" | "ANGRY";
+type ProfileVisibility = "PUBLIC" | "FRIENDS" | "PRIVATE";
+type TwoFactorMethod = "EMAIL" | "PHONE";
 
 type LectureMaterial = {
   name: string;
@@ -135,6 +138,8 @@ type Post = {
   };
   likesCount: number;
   likedByMe: boolean;
+  myReaction: PostReaction | null;
+  reactions: Record<PostReaction, number>;
   commentsCount: number;
   comments: PostComment[];
   sharedSemesters: Array<{
@@ -157,6 +162,17 @@ type Post = {
 
 type DashboardClientProps = {
   initialUser: UserPayload;
+};
+
+type SecuritySettings = {
+  email: string | null;
+  pendingEmail: string | null;
+  profileVisibility: ProfileVisibility;
+  allowFriendRequests: boolean;
+  defaultPostVisibility: PostVisibility;
+  twoFactorEnabled: boolean;
+  twoFactorMethod: TwoFactorMethod;
+  twoFactorPhone: string | null;
 };
 
 type SubjectDraft = {
@@ -196,6 +212,15 @@ type ExcelIssue = {
 
 type ActiveView = "FEED" | "PROFILE" | "SEMESTERS";
 
+const REACTION_OPTIONS: Array<{ type: PostReaction; label: string; emoji: string }> = [
+  { type: "LIKE", label: "Like", emoji: "👍" },
+  { type: "LOVE", label: "Love", emoji: "❤️" },
+  { type: "HAHA", label: "Haha", emoji: "😂" },
+  { type: "WOW", label: "Wow", emoji: "😮" },
+  { type: "SAD", label: "Sad", emoji: "😢" },
+  { type: "ANGRY", label: "Angry", emoji: "😡" }
+];
+
 const createEmptySubject = (): SubjectDraft => ({
   name: "",
   credits: 3,
@@ -222,6 +247,14 @@ const formatDateTime = (value: string) =>
     hour: "2-digit",
     minute: "2-digit"
   });
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 const formatSemesterNumber = (index: number, totalSemesters: number) => {
   const padLength = String(Math.max(totalSemesters, 9)).length;
@@ -328,6 +361,27 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     showChance: true
   });
 
+  const [securityForm, setSecurityForm] = useState({
+    profileVisibility: "FRIENDS" as ProfileVisibility,
+    allowFriendRequests: true,
+    defaultPostVisibility: "FRIENDS" as PostVisibility,
+    twoFactorEnabled: false,
+    twoFactorMethod: "EMAIL" as TwoFactorMethod,
+    twoFactorPhone: ""
+  });
+  const [savingSecurity, setSavingSecurity] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [emailChangeLoading, setEmailChangeLoading] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
+  const [emailChangeForm, setEmailChangeForm] = useState({
+    newEmail: ""
+  });
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+
   const totalSemesters = Math.max(1, Number(profileForm.totalSemesters) || 1);
 
   const usedSemesterIndexes = useMemo(
@@ -341,14 +395,15 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     setLoading(true);
     setError(null);
 
-    const [profileRes, semestersRes, friendsRes, postsRes] = await Promise.all([
+    const [profileRes, semestersRes, friendsRes, postsRes, securityRes] = await Promise.all([
       fetch("/api/profile"),
       fetch("/api/semesters"),
       fetch("/api/friends/list"),
-      fetch("/api/posts")
+      fetch("/api/posts"),
+      fetch("/api/security/settings")
     ]);
 
-    if (!profileRes.ok || !semestersRes.ok || !friendsRes.ok || !postsRes.ok) {
+    if (!profileRes.ok || !semestersRes.ok || !friendsRes.ok || !postsRes.ok || !securityRes.ok) {
       setLoading(false);
       setError("Failed to load dashboard data");
       return;
@@ -366,6 +421,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     };
     const friendsData = (await friendsRes.json()) as { friends: Friend[] };
     const postsData = (await postsRes.json()) as { posts: Post[] };
+    const securityData = (await securityRes.json()) as { settings: SecuritySettings };
 
     setUser(profileData.user);
     setSemesters(semestersData.semesters);
@@ -375,6 +431,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     setRetakeQueues(semestersData.retakeQueues);
     setFriends(friendsData.friends);
     setPosts(postsData.posts);
+    setPendingEmail(securityData.settings.pendingEmail ?? null);
 
     const finishedCount =
       typeof semestersData.completedSemesters === "number"
@@ -402,10 +459,20 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
 
     setPostForm((previous) => ({
       ...previous,
+      visibility: securityData.settings.defaultPostVisibility,
       sharedSemesterIds: previous.sharedSemesterIds.filter((id) =>
         semestersData.semesters.some((semester) => semester.id === id)
       )
     }));
+
+    setSecurityForm({
+      profileVisibility: securityData.settings.profileVisibility,
+      allowFriendRequests: securityData.settings.allowFriendRequests,
+      defaultPostVisibility: securityData.settings.defaultPostVisibility,
+      twoFactorEnabled: securityData.settings.twoFactorEnabled,
+      twoFactorMethod: securityData.settings.twoFactorMethod,
+      twoFactorPhone: securityData.settings.twoFactorPhone ?? ""
+    });
 
     setLoading(false);
   }, []);
@@ -500,6 +567,106 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     }));
 
     setMessage("Profile photo updated");
+  };
+
+  const saveSecuritySettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSavingSecurity(true);
+    clearNotifications();
+
+    const payload = {
+      profileVisibility: securityForm.profileVisibility,
+      allowFriendRequests: securityForm.allowFriendRequests,
+      defaultPostVisibility: securityForm.defaultPostVisibility,
+      twoFactorEnabled: securityForm.twoFactorEnabled,
+      twoFactorMethod: securityForm.twoFactorMethod,
+      twoFactorPhone: securityForm.twoFactorPhone.trim() === "" ? null : securityForm.twoFactorPhone.trim()
+    };
+
+    const response = await fetch("/api/security/settings", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = (await response.json()) as { error?: string; message?: string };
+    setSavingSecurity(false);
+
+    if (!response.ok) {
+      setError(data.error ?? "Failed to update security settings");
+      return;
+    }
+
+    setMessage(data.message ?? "Security settings updated");
+    await loadData();
+  };
+
+  const handleChangePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setChangingPassword(true);
+    clearNotifications();
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setChangingPassword(false);
+      setError("New password and confirm password do not match");
+      return;
+    }
+
+    const response = await fetch("/api/security/password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword
+      })
+    });
+
+    const data = (await response.json()) as { error?: string; message?: string };
+    setChangingPassword(false);
+
+    if (!response.ok) {
+      setError(data.error ?? "Failed to change password");
+      return;
+    }
+
+    setPasswordForm({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: ""
+    });
+    setMessage(data.message ?? "Password updated");
+  };
+
+  const requestEmailChange = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setEmailChangeLoading(true);
+    clearNotifications();
+
+    const response = await fetch("/api/security/email-change/request", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        newEmail: emailChangeForm.newEmail
+      })
+    });
+
+    const data = (await response.json()) as { error?: string; message?: string };
+    setEmailChangeLoading(false);
+
+    if (!response.ok) {
+      setError(data.error ?? "Failed to request email change");
+      return;
+    }
+
+    setMessage(data.message ?? "Verification link sent");
+    setEmailChangeForm({ newEmail: "" });
+    await loadData();
   };
 
   const resolveSemesterPayload = (draft: SemesterDraft) => ({
@@ -979,17 +1146,27 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     setMessage("Post published");
   };
 
-  const toggleLike = async (postId: string) => {
+  const setReaction = async (postId: string, reaction: PostReaction | "NONE") => {
     clearNotifications();
 
     const response = await fetch(`/api/posts/${postId}/like`, {
-      method: "POST"
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ reaction })
     });
 
-    const data = (await response.json()) as { error?: string; liked?: boolean; likesCount?: number };
+    const data = (await response.json()) as {
+      error?: string;
+      liked?: boolean;
+      likesCount?: number;
+      myReaction?: PostReaction | null;
+      reactions?: Partial<Record<PostReaction, number>>;
+    };
 
     if (!response.ok || typeof data.liked !== "boolean" || typeof data.likesCount !== "number") {
-      setError(data.error ?? "Failed to update like");
+      setError(data.error ?? "Failed to update reaction");
       return;
     }
 
@@ -999,7 +1176,16 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
           ? {
               ...post,
               likedByMe: data.liked ?? post.likedByMe,
-              likesCount: data.likesCount ?? post.likesCount
+              likesCount: data.likesCount ?? post.likesCount,
+              myReaction: data.myReaction ?? null,
+              reactions: {
+                LIKE: data.reactions?.LIKE ?? 0,
+                LOVE: data.reactions?.LOVE ?? 0,
+                HAHA: data.reactions?.HAHA ?? 0,
+                WOW: data.reactions?.WOW ?? 0,
+                SAD: data.reactions?.SAD ?? 0,
+                ANGRY: data.reactions?.ANGRY ?? 0
+              }
             }
           : post
       )
@@ -1060,33 +1246,28 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     clearNotifications();
 
     try {
-      const [{ jsPDF }, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
-      const autoTable = autoTableModule.default;
-
-      const doc = new jsPDF({ unit: "mm", format: "a4" });
-
-      doc.setFillColor(18, 74, 61);
-      doc.rect(0, 0, 210, 34, "F");
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(17);
-      doc.setFont("helvetica", "bold");
-      doc.text("Official Academic Transcript", 14, 13);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.text("UniversityBOOK - Student Report", 14, 19);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 25);
+      const html2pdfModule = await import("html2pdf.js");
+      const html2pdf = (html2pdfModule.default ?? html2pdfModule) as {
+        (): {
+          set: (options: object) => {
+            from: (element: HTMLElement) => {
+              save: () => Promise<void>;
+            };
+          };
+        };
+      };
 
       const studentName = `${profileForm.firstName} ${profileForm.lastName}`.trim() || user.username || "Student";
-      doc.text(`Student: ${studentName}`, 14, 30);
 
-      const infoRows: string[][] = [
+      const infoRows: Array<[string, string]> = [
         ["Username", profileForm.username || "-"],
         ["Email", user.email ?? "-"],
         ["Degree", DEGREE_LABELS[profileForm.degreeLevel]],
         ["Year Of Enrollment", String(profileForm.yearOfEnrollment)],
         ["Date Of Birth", profileForm.dateOfBirth || "-"],
-        ["Total Semesters", String(profileForm.totalSemesters)]
+        ["Total Semesters", String(profileForm.totalSemesters)],
+        ["Overall Percentage", `${overallPercentage.toFixed(2)}%`],
+        ["Finished Semesters", String(completedSemesters)]
       ];
 
       if (transcriptOptions.showFatherName) {
@@ -1102,95 +1283,114 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
         infoRows.push(["Department", profileForm.department || "-"]);
       }
 
-      infoRows.push(["Overall Percentage", `${overallPercentage.toFixed(2)}%`]);
-      infoRows.push(["Finished Semesters", String(completedSemesters)]);
-
-      autoTable(doc, {
-        startY: 40,
-        head: [["Field", "Value"]],
-        body: infoRows,
-        theme: "grid",
-        headStyles: {
-          fillColor: [24, 96, 78]
-        },
-        styles: {
-          fontSize: 9
-        }
-      });
-
-      let currentY = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 60;
+      const infoTableRows = infoRows
+        .map(
+          ([field, value]) =>
+            `<tr><td style="padding:8px;border:1px solid #c7ded4;font-weight:700;">${escapeHtml(field)}</td><td style="padding:8px;border:1px solid #c7ded4;">${escapeHtml(value)}</td></tr>`
+        )
+        .join("");
 
       const sortedSemesters = [...semesters].sort((a, b) => a.index - b.index);
 
-      for (const semester of sortedSemesters) {
-        if (currentY > 235) {
-          doc.addPage();
-          currentY = 20;
-        }
-
-        const semesterNumber = formatSemesterNumber(semester.index, totalSemesters);
-        doc.setTextColor(28, 35, 31);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        const statusText = transcriptOptions.showSemesterStatus ? ` (${semester.status})` : "";
-        doc.text(
-          `Semester ${semesterNumber}${semester.name ? ` - ${semester.name}` : ""}${statusText}`,
-          14,
-          currentY + 5
-        );
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.text(`Semester Percentage: ${semester.percentage.toFixed(2)}%`, 14, currentY + 10);
-
-        const columns = ["Subject", "Score %"];
-        if (transcriptOptions.showCredits) {
-          columns.push("Credits");
-        }
-        if (transcriptOptions.showChance) {
-          columns.push("Chance");
-        }
-        if (transcriptOptions.showCode) {
-          columns.push("Code");
-        }
-        if (transcriptOptions.showTeacher) {
-          columns.push("Teacher");
-        }
-
-        const body = semester.subjects.map((subject) => {
-          const row = [subject.name, subject.score.toFixed(2)];
+      const semesterBlocks = sortedSemesters
+        .map((semester) => {
+          const columns = ["Subject", "Score %"];
           if (transcriptOptions.showCredits) {
-            row.push(String(subject.credits));
+            columns.push("Credits");
           }
           if (transcriptOptions.showChance) {
-            row.push(String(subject.chance));
+            columns.push("Chance");
           }
           if (transcriptOptions.showCode) {
-            row.push(subject.code ?? "-");
+            columns.push("Code");
           }
           if (transcriptOptions.showTeacher) {
-            row.push(subject.teacherName ?? "-");
+            columns.push("Teacher");
           }
-          return row;
-        });
 
-        autoTable(doc, {
-          startY: currentY + 13,
-          head: [columns],
-          body,
-          theme: "grid",
-          headStyles: {
-            fillColor: [38, 120, 99]
-          },
-          styles: {
-            fontSize: 8
-          }
-        });
+          const headerCells = columns
+            .map(
+              (column) =>
+                `<th style="padding:8px;border:1px solid #c7ded4;background:#e7f5f0;text-align:left;">${escapeHtml(column)}</th>`
+            )
+            .join("");
 
-        currentY = ((doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? currentY) + 8;
-      }
+          const bodyRows = semester.subjects
+            .map((subject) => {
+              const cells = [escapeHtml(subject.name), subject.score.toFixed(2)];
+              if (transcriptOptions.showCredits) {
+                cells.push(String(subject.credits));
+              }
+              if (transcriptOptions.showChance) {
+                cells.push(String(subject.chance));
+              }
+              if (transcriptOptions.showCode) {
+                cells.push(escapeHtml(subject.code ?? "-"));
+              }
+              if (transcriptOptions.showTeacher) {
+                cells.push(escapeHtml(subject.teacherName ?? "-"));
+              }
+
+              return `<tr>${cells
+                .map((cell) => `<td style="padding:8px;border:1px solid #c7ded4;">${cell}</td>`)
+                .join("")}</tr>`;
+            })
+            .join("");
+
+          const statusText = transcriptOptions.showSemesterStatus ? ` (${semester.status})` : "";
+          return `
+            <section style="margin-top:16px;break-inside:avoid;">
+              <h3 style="margin:0 0 6px 0;color:#154d3f;">Semester ${formatSemesterNumber(semester.index, totalSemesters)}${semester.name ? ` - ${escapeHtml(semester.name)}` : ""}${statusText}</h3>
+              <p style="margin:0 0 8px 0;color:#2f5f54;">Semester Percentage: ${semester.percentage.toFixed(2)}%</p>
+              <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead><tr>${headerCells}</tr></thead>
+                <tbody>${bodyRows}</tbody>
+              </table>
+            </section>
+          `;
+        })
+        .join("");
+
+      const container = document.createElement("div");
+      container.className = "font-persian";
+      container.style.padding = "20px";
+      container.style.background = "#ffffff";
+      container.style.color = "#13211d";
+      container.style.width = "794px";
+      container.style.margin = "0 auto";
+      container.innerHTML = `
+        <div style="font-family: Vazirmatn, Amiri, Tahoma, sans-serif;">
+          <header style="background:linear-gradient(135deg,#0f5a49,#1f7a64);padding:18px;border-radius:14px;color:#fff;">
+            <h1 style="margin:0;font-size:24px;">Official Academic Transcript</h1>
+            <p style="margin:8px 0 0 0;font-size:13px;">UniBOOK - Student Report</p>
+            <p style="margin:6px 0 0 0;font-size:12px;">Generated: ${escapeHtml(new Date().toLocaleString())}</p>
+            <p style="margin:6px 0 0 0;font-size:13px;">Student: ${escapeHtml(studentName)}</p>
+          </header>
+          <section style="margin-top:16px;">
+            <h2 style="margin:0 0 8px 0;color:#154d3f;">Student Information</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <tbody>${infoTableRows}</tbody>
+            </table>
+          </section>
+          ${semesterBlocks}
+        </div>
+      `;
+
+      document.body.appendChild(container);
 
       const safeUsername = (user.username ?? "student").replace(/[^a-zA-Z0-9_-]/g, "_");
-      doc.save(`transcript-${safeUsername}.pdf`);
+      await html2pdf()
+        .set({
+          margin: 8,
+          filename: `transcript-${safeUsername}.pdf`,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+        })
+        .from(container)
+        .save();
+
+      document.body.removeChild(container);
 
       setMessage("Transcript PDF downloaded");
     } catch (requestError) {
@@ -1340,7 +1540,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       <section className="hero-panel">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-200">UniversityBOOK</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-200">UniBOOK</p>
             <h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">Dashboard</h1>
             <p className="mt-2 max-w-2xl text-sm text-brand-100">
               Feed-first workspace. Open Profile to edit your information and Add Semester to manage marks.
@@ -1409,7 +1609,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
             <form className="space-y-4" onSubmit={createPost}>
               <Field label="Text (Optional if sharing semesters/overall)">
                 <textarea
-                  className="input min-h-28"
+                  className="input font-pashto min-h-28"
                   dir="auto"
                   value={postForm.content}
                   onChange={(event) =>
@@ -1520,7 +1720,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                   </div>
 
                   {post.content.trim().length > 0 ? (
-                    <p className="whitespace-pre-wrap text-sm text-brand-900" dir="auto">
+                    <p className="font-pashto whitespace-pre-wrap text-sm text-brand-900" dir="auto">
                       {post.content}
                     </p>
                   ) : null}
@@ -1573,14 +1773,32 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                     </div>
                   ) : null}
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      className={`btn-secondary ${post.likedByMe ? "border-brand-500 bg-brand-100" : ""}`}
-                      onClick={() => void toggleLike(post.id)}
-                    >
-                      {post.likedByMe ? "Liked" : "Like"} ({post.likesCount})
-                    </button>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {REACTION_OPTIONS.map((reaction) => {
+                        const active = post.myReaction === reaction.type;
+                        const count = post.reactions[reaction.type] ?? 0;
+
+                        return (
+                          <button
+                            key={`${post.id}-${reaction.type}`}
+                            type="button"
+                            className={`rounded-full border px-3 py-1 text-sm transition ${
+                              active
+                                ? "border-brand-500 bg-brand-100 text-brand-900"
+                                : "border-brand-200 bg-white text-brand-700 hover:bg-brand-50"
+                            }`}
+                            onClick={() =>
+                              void setReaction(post.id, active ? "NONE" : reaction.type)
+                            }
+                            title={reaction.label}
+                          >
+                            <span>{reaction.emoji}</span> <span className="text-xs">{count}</span>
+                          </button>
+                        );
+                      })}
+                      <span className="text-xs text-brand-700">Total reactions: {post.likesCount}</span>
+                    </div>
                     <span className="text-xs text-brand-700">Comments: {post.commentsCount}</span>
                   </div>
 
@@ -1596,7 +1814,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                               : comment.user.username ?? comment.user.email ?? "User"}
                             <span className="ml-2 font-normal text-brand-600">{formatDateTime(comment.createdAt)}</span>
                           </p>
-                          <p className="mt-1 text-sm text-brand-900" dir="auto">
+                          <p className="font-pashto mt-1 text-sm text-brand-900" dir="auto">
                             {comment.content}
                           </p>
                         </div>
@@ -1605,7 +1823,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
 
                     <div className="flex gap-2">
                       <input
-                        className="input"
+                        className="input font-pashto"
                         placeholder="Write a comment..."
                         dir="auto"
                         value={commentDrafts[post.id] ?? ""}
@@ -1925,6 +2143,187 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
               <button type="button" className="btn-primary w-full" disabled={generatingTranscript} onClick={() => void downloadTranscriptPdf()}>
                 {generatingTranscript ? "Generating transcript..." : "Download transcript PDF"}
               </button>
+            </article>
+
+            <article className="panel space-y-4">
+              <h3 className="text-lg font-bold text-brand-950">Security & Privacy</h3>
+
+              <form className="space-y-3" onSubmit={saveSecuritySettings}>
+                <Field label="Profile Visibility">
+                  <select
+                    className="input"
+                    value={securityForm.profileVisibility}
+                    onChange={(event) =>
+                      setSecurityForm((previous) => ({
+                        ...previous,
+                        profileVisibility: event.target.value as ProfileVisibility
+                      }))
+                    }
+                  >
+                    <option value="PUBLIC">Public</option>
+                    <option value="FRIENDS">Friends Only</option>
+                    <option value="PRIVATE">Private</option>
+                  </select>
+                </Field>
+
+                <Field label="Default Post Visibility">
+                  <select
+                    className="input"
+                    value={securityForm.defaultPostVisibility}
+                    onChange={(event) =>
+                      setSecurityForm((previous) => ({
+                        ...previous,
+                        defaultPostVisibility: event.target.value as PostVisibility
+                      }))
+                    }
+                  >
+                    <option value="FRIENDS">Friends</option>
+                    <option value="PUBLIC">Public</option>
+                  </select>
+                </Field>
+
+                <label className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
+                  <input
+                    type="checkbox"
+                    checked={securityForm.allowFriendRequests}
+                    onChange={(event) =>
+                      setSecurityForm((previous) => ({
+                        ...previous,
+                        allowFriendRequests: event.target.checked
+                      }))
+                    }
+                  />
+                  Allow friend requests
+                </label>
+
+                <label className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
+                  <input
+                    type="checkbox"
+                    checked={securityForm.twoFactorEnabled}
+                    onChange={(event) =>
+                      setSecurityForm((previous) => ({
+                        ...previous,
+                        twoFactorEnabled: event.target.checked
+                      }))
+                    }
+                  />
+                  Enable Two-Factor Authentication
+                </label>
+
+                {securityForm.twoFactorEnabled ? (
+                  <div className="grid gap-3">
+                    <Field label="2FA Method">
+                      <select
+                        className="input"
+                        value={securityForm.twoFactorMethod}
+                        onChange={(event) =>
+                          setSecurityForm((previous) => ({
+                            ...previous,
+                            twoFactorMethod: event.target.value as TwoFactorMethod
+                          }))
+                        }
+                      >
+                        <option value="EMAIL">Email</option>
+                        <option value="PHONE">Phone</option>
+                      </select>
+                    </Field>
+
+                    {securityForm.twoFactorMethod === "PHONE" ? (
+                      <Field label="Phone Number">
+                        <input
+                          className="input"
+                          value={securityForm.twoFactorPhone}
+                          onChange={(event) =>
+                            setSecurityForm((previous) => ({
+                              ...previous,
+                              twoFactorPhone: event.target.value
+                            }))
+                          }
+                          placeholder="+93..."
+                        />
+                      </Field>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <button type="submit" className="btn-secondary w-full" disabled={savingSecurity}>
+                  {savingSecurity ? "Saving security..." : "Save security settings"}
+                </button>
+              </form>
+
+              <form className="space-y-3 border-t border-brand-200 pt-3" onSubmit={handleChangePassword}>
+                <p className="text-sm font-semibold text-brand-900">Change Password</p>
+                <Field label="Current Password">
+                  <input
+                    type="password"
+                    className="input"
+                    value={passwordForm.currentPassword}
+                    onChange={(event) =>
+                      setPasswordForm((previous) => ({
+                        ...previous,
+                        currentPassword: event.target.value
+                      }))
+                    }
+                    required
+                  />
+                </Field>
+                <Field label="New Password">
+                  <input
+                    type="password"
+                    className="input"
+                    value={passwordForm.newPassword}
+                    onChange={(event) =>
+                      setPasswordForm((previous) => ({
+                        ...previous,
+                        newPassword: event.target.value
+                      }))
+                    }
+                    required
+                  />
+                </Field>
+                <Field label="Confirm New Password">
+                  <input
+                    type="password"
+                    className="input"
+                    value={passwordForm.confirmPassword}
+                    onChange={(event) =>
+                      setPasswordForm((previous) => ({
+                        ...previous,
+                        confirmPassword: event.target.value
+                      }))
+                    }
+                    required
+                  />
+                </Field>
+                <button type="submit" className="btn-secondary w-full" disabled={changingPassword}>
+                  {changingPassword ? "Updating..." : "Update password"}
+                </button>
+              </form>
+
+              <form className="space-y-3 border-t border-brand-200 pt-3" onSubmit={requestEmailChange}>
+                <p className="text-sm font-semibold text-brand-900">Change Email</p>
+                <Field label="New Email">
+                  <input
+                    type="email"
+                    className="input"
+                    value={emailChangeForm.newEmail}
+                    onChange={(event) =>
+                      setEmailChangeForm({
+                        newEmail: event.target.value
+                      })
+                    }
+                    required
+                  />
+                </Field>
+                {pendingEmail ? (
+                  <p className="text-xs text-brand-700">
+                    Pending verification for: <strong>{pendingEmail}</strong>
+                  </p>
+                ) : null}
+                <button type="submit" className="btn-secondary w-full" disabled={emailChangeLoading}>
+                  {emailChangeLoading ? "Sending verification..." : "Verify and change email"}
+                </button>
+              </form>
             </article>
           </div>
         </section>

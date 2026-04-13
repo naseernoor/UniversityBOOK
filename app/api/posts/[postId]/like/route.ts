@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
 import { canViewPost } from "@/lib/posts";
 import { prisma } from "@/lib/prisma";
+import { postReactionSchema } from "@/lib/validators";
 
 type Params = {
   params: {
@@ -10,7 +11,7 @@ type Params = {
   };
 };
 
-export async function POST(_request: Request, { params }: Params) {
+export async function POST(request: Request, { params }: Params) {
   const session = await getServerAuthSession();
 
   if (!session?.user?.id) {
@@ -25,6 +26,10 @@ export async function POST(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const body = await request.json().catch(() => ({}));
+  const parsed = postReactionSchema.safeParse(body);
+  const reaction = parsed.success ? parsed.data.reaction : "LIKE";
+
   const existing = await prisma.postLike.findUnique({
     where: {
       postId_userId: {
@@ -33,11 +38,35 @@ export async function POST(_request: Request, { params }: Params) {
       }
     },
     select: {
-      id: true
+      id: true,
+      reactionType: true
     }
   });
 
-  if (existing) {
+  let myReaction: string | null = null;
+
+  if (reaction === "NONE") {
+    if (existing) {
+      await prisma.postLike.delete({
+        where: {
+          postId_userId: {
+            postId: params.postId,
+            userId: session.user.id
+          }
+        }
+      });
+    }
+    myReaction = null;
+  } else if (!existing) {
+    await prisma.postLike.create({
+      data: {
+        postId: params.postId,
+        userId: session.user.id,
+        reactionType: reaction
+      }
+    });
+    myReaction = reaction;
+  } else if (existing.reactionType === reaction) {
     await prisma.postLike.delete({
       where: {
         postId_userId: {
@@ -46,23 +75,40 @@ export async function POST(_request: Request, { params }: Params) {
         }
       }
     });
+    myReaction = null;
   } else {
-    await prisma.postLike.create({
+    await prisma.postLike.update({
+      where: {
+        postId_userId: {
+          postId: params.postId,
+          userId: session.user.id
+        }
+      },
       data: {
-        postId: params.postId,
-        userId: session.user.id
+        reactionType: reaction
       }
     });
+    myReaction = reaction;
   }
 
-  const likesCount = await prisma.postLike.count({
+  const likes = await prisma.postLike.findMany({
     where: {
       postId: params.postId
+    },
+    select: {
+      reactionType: true
     }
   });
 
+  const reactions = likes.reduce<Record<string, number>>((acc, item) => {
+    acc[item.reactionType] = (acc[item.reactionType] ?? 0) + 1;
+    return acc;
+  }, {});
+
   return NextResponse.json({
-    liked: !existing,
-    likesCount
+    liked: myReaction !== null,
+    likesCount: likes.length,
+    myReaction,
+    reactions
   });
 }

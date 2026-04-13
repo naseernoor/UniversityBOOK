@@ -30,12 +30,24 @@ export async function POST(request: Request) {
         id: targetUserId
       },
       select: {
-        id: true
+        id: true,
+        profile: {
+          select: {
+            allowFriendRequests: true
+          }
+        }
       }
     });
 
     if (!targetUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    if (!targetUser.profile?.allowFriendRequests) {
+      return NextResponse.json(
+        { error: "This user is not accepting friend requests" },
+        { status: 403 }
+      );
     }
 
     const existing = await prisma.friendRequest.findFirst({

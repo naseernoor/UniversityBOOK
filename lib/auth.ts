@@ -5,14 +5,17 @@ import AppleProvider from "next-auth/providers/apple";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 
+import { sendTwoFactorCode } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
+import { consumeTwoFactorCode, createTwoFactorCode } from "@/lib/tokens";
 
 const providers: NextAuthOptions["providers"] = [
   CredentialsProvider({
     name: "Email and Password",
     credentials: {
       email: { label: "Email", type: "email" },
-      password: { label: "Password", type: "password" }
+      password: { label: "Password", type: "password" },
+      twoFactorCode: { label: "Two Factor Code", type: "text" }
     },
     async authorize(credentials) {
       if (!credentials?.email || !credentials?.password) {
@@ -22,6 +25,13 @@ const providers: NextAuthOptions["providers"] = [
       const user = await prisma.user.findUnique({
         where: {
           email: credentials.email.toLowerCase()
+        },
+        include: {
+          profile: {
+            select: {
+              firstName: true
+            }
+          }
         }
       });
 
@@ -37,6 +47,31 @@ const providers: NextAuthOptions["providers"] = [
 
       if (!user.emailVerified) {
         throw new Error("EMAIL_NOT_VERIFIED");
+      }
+
+      if (user.twoFactorEnabled) {
+        const twoFactorCode = credentials.twoFactorCode?.trim();
+
+        if (!twoFactorCode) {
+          const code = await createTwoFactorCode(user.id);
+          await sendTwoFactorCode({
+            method: user.twoFactorMethod,
+            code,
+            toEmail: user.email,
+            toPhone: user.twoFactorPhone,
+            firstName: user.profile?.firstName ?? user.name
+          });
+          throw new Error("TWO_FACTOR_REQUIRED");
+        }
+
+        const validCode = await consumeTwoFactorCode({
+          userId: user.id,
+          code: twoFactorCode
+        });
+
+        if (!validCode.valid) {
+          throw new Error("INVALID_TWO_FACTOR_CODE");
+        }
       }
 
       return {

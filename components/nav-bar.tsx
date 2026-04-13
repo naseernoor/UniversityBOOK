@@ -12,10 +12,10 @@ export default function NavBar() {
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
         <Link href="/" className="group flex items-center gap-2">
           <span className="rounded-xl bg-gradient-to-r from-brand-800 to-brand-600 px-2 py-1 text-xs font-black uppercase tracking-wider text-white">
-            MT
+            UB
           </span>
           <span className="text-lg font-black tracking-tight text-brand-950 transition group-hover:text-brand-700">
-            MarksTracker
+            UniBOOK
           </span>
         </Link>
 

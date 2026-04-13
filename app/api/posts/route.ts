@@ -41,6 +41,22 @@ export async function POST(request: Request) {
     const data = parsed.data;
     const sharedSemesterIds = [...new Set(data.sharedSemesterIds)];
 
+    const userProfile = await prisma.profile.findUnique({
+      where: {
+        userId: session.user.id
+      },
+      select: {
+        defaultPostVisibility: true,
+        idealPercentage: true,
+        totalSemesters: true,
+        minimumPassingMarks: true
+      }
+    });
+
+    if (!userProfile) {
+      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+    }
+
     const ownedSemesters = await prisma.semester.findMany({
       where: {
         userId: session.user.id,
@@ -64,37 +80,25 @@ export async function POST(request: Request) {
 
     let overallPercentageSnapshot: number | null = null;
     if (data.includeOverallPercentage) {
-      const [profile, semesters] = await Promise.all([
-        prisma.profile.findUnique({
-          where: {
-            userId: session.user.id
-          },
-          select: {
-            idealPercentage: true,
-            totalSemesters: true,
-            minimumPassingMarks: true
-          }
-        }),
-        prisma.semester.findMany({
-          where: {
-            userId: session.user.id
-          },
-          include: {
-            subjects: true,
-            visibility: {
-              select: {
-                viewerId: true
-              }
+      const semesters = await prisma.semester.findMany({
+        where: {
+          userId: session.user.id
+        },
+        include: {
+          subjects: true,
+          visibility: {
+            select: {
+              viewerId: true
             }
           }
-        })
-      ]);
+        }
+      });
 
       const summary = buildPerformanceSummary({
         semesters,
-        totalSemesters: profile?.totalSemesters ?? 8,
-        idealPercentage: profile?.idealPercentage ?? null,
-        minimumPassingMarks: profile?.minimumPassingMarks ?? 50
+        totalSemesters: userProfile.totalSemesters,
+        idealPercentage: userProfile.idealPercentage ?? null,
+        minimumPassingMarks: userProfile.minimumPassingMarks
       });
 
       overallPercentageSnapshot = summary.overallPercentage;
@@ -104,7 +108,7 @@ export async function POST(request: Request) {
       data: {
         userId: session.user.id,
         content: data.content,
-        visibility: data.visibility,
+        visibility: data.visibility ?? userProfile.defaultPostVisibility,
         includeOverallPercentage: data.includeOverallPercentage,
         overallPercentageSnapshot,
         sharedSemesters: {

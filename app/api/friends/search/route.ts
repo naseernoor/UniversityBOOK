@@ -25,17 +25,20 @@ export async function GET(request: Request) {
       OR: [
         {
           username: {
-            contains: query
+            contains: query,
+            mode: "insensitive"
           }
         },
         {
           email: {
-            contains: query
+            contains: query,
+            mode: "insensitive"
           }
         },
         {
           name: {
-            contains: query
+            contains: query,
+            mode: "insensitive"
           }
         }
       ]
@@ -47,7 +50,9 @@ export async function GET(request: Request) {
       email: true,
       profile: {
         select: {
-          university: true
+          university: true,
+          allowFriendRequests: true,
+          profileVisibility: true
         }
       }
     },
@@ -82,29 +87,36 @@ export async function GET(request: Request) {
     }
   });
 
-  const usersWithStatus = users.map((user) => {
-    const relationship = relationships.find(
-      (item) =>
-        (item.senderId === session.user.id && item.recipientId === user.id) ||
-        (item.senderId === user.id && item.recipientId === session.user.id)
-    );
+  const usersWithStatus = users
+    .map((user) => {
+      const relationship = relationships.find(
+        (item) =>
+          (item.senderId === session.user.id && item.recipientId === user.id) ||
+          (item.senderId === user.id && item.recipientId === session.user.id)
+      );
 
-    let relationshipStatus: "NONE" | "PENDING_SENT" | "PENDING_RECEIVED" | "FRIENDS" = "NONE";
+      let relationshipStatus: "NONE" | "PENDING_SENT" | "PENDING_RECEIVED" | "FRIENDS" = "NONE";
 
-    if (relationship) {
-      if (relationship.status === "ACCEPTED") {
-        relationshipStatus = "FRIENDS";
-      } else if (relationship.status === "PENDING") {
-        relationshipStatus =
-          relationship.senderId === session.user.id ? "PENDING_SENT" : "PENDING_RECEIVED";
+      if (relationship) {
+        if (relationship.status === "ACCEPTED") {
+          relationshipStatus = "FRIENDS";
+        } else if (relationship.status === "PENDING") {
+          relationshipStatus =
+            relationship.senderId === session.user.id ? "PENDING_SENT" : "PENDING_RECEIVED";
+        }
       }
-    }
 
-    return {
-      ...user,
-      relationshipStatus
-    };
-  });
+      if (user.profile?.profileVisibility === "PRIVATE" && relationshipStatus === "NONE") {
+        return null;
+      }
+
+      return {
+        ...user,
+        relationshipStatus,
+        acceptsRequests: user.profile?.allowFriendRequests ?? true
+      };
+    })
+    .filter((user): user is NonNullable<typeof user> => user !== null);
 
   return NextResponse.json({ users: usersWithStatus });
 }

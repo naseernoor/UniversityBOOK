@@ -1,4 +1,4 @@
-import { PostVisibility, Prisma } from "@prisma/client";
+import { PostReactionType, PostVisibility, Prisma } from "@prisma/client";
 
 import { calculateSemesterPercentage } from "@/lib/calculations";
 import { getAcceptedFriendIds } from "@/lib/friends";
@@ -23,7 +23,8 @@ const postInclude = {
   },
   likes: {
     select: {
-      userId: true
+      userId: true,
+      reactionType: true
     }
   },
   comments: {
@@ -68,6 +69,7 @@ type PostWithRelations = Prisma.PostGetPayload<{
 }>;
 
 const mapPost = (post: PostWithRelations, viewerId: string) => ({
+  // Keep response shape stable while adding richer reactions.
   id: post.id,
   content: post.content,
   visibility: post.visibility,
@@ -78,6 +80,12 @@ const mapPost = (post: PostWithRelations, viewerId: string) => ({
   author: post.user,
   likesCount: post.likes.length,
   likedByMe: post.likes.some((like) => like.userId === viewerId),
+  myReaction:
+    post.likes.find((like) => like.userId === viewerId)?.reactionType ?? null,
+  reactions: Object.values(PostReactionType).reduce((acc, type) => {
+    acc[type] = post.likes.filter((like) => like.reactionType === type).length;
+    return acc;
+  }, {} as Record<PostReactionType, number>),
   commentsCount: post.comments.length,
   comments: post.comments.map((comment) => ({
     id: comment.id,

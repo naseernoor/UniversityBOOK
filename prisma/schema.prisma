@@ -19,6 +19,16 @@ enum DegreeLevel {
   PHD
 }
 
+enum SemesterStatus {
+  ONGOING
+  FINISHED
+}
+
+enum PostVisibility {
+  FRIENDS
+  PUBLIC
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -32,6 +42,9 @@ model User {
 
   profile   Profile?
   semesters Semester[]
+  posts     Post[]
+  postLikes PostLike[]
+  comments  PostComment[]
 
   accounts Account[]
   sessions Session[]
@@ -67,14 +80,72 @@ model Semester {
   userId    String
   index     Int
   name      String?
+  status    SemesterStatus @default(FINISHED)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subjects  Subject[]
-  visibility SemesterVisibility[]
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjects    Subject[]
+  visibility  SemesterVisibility[]
+  postShares  PostSharedSemester[]
 
   @@unique([userId, index])
+}
+
+model Post {
+  id                        String         @id @default(cuid())
+  userId                    String
+  content                   String
+  visibility                PostVisibility @default(FRIENDS)
+  includeOverallPercentage  Boolean        @default(false)
+  overallPercentageSnapshot Float?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes           PostLike[]
+  comments        PostComment[]
+  sharedSemesters PostSharedSemester[]
+
+  @@index([createdAt(sort: Desc)])
+}
+
+model PostSharedSemester {
+  id         String   @id @default(cuid())
+  postId     String
+  semesterId String
+  createdAt  DateTime @default(now())
+
+  post     Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  semester Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, semesterId])
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt(sort: Desc)])
 }
 
 model Subject {

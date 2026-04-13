@@ -47,13 +47,41 @@ export async function PUT(request: Request, { params }: Params) {
       );
     }
 
+    const profile = await prisma.profile.findUnique({
+      where: {
+        userId: session.user.id
+      },
+      select: {
+        totalSemesters: true
+      }
+    });
+
+    if (!profile) {
+      return NextResponse.json(
+        {
+          error: "Please complete your profile before updating semesters"
+        },
+        { status: 400 }
+      );
+    }
+
+    if (parsed.data.index > profile.totalSemesters) {
+      return NextResponse.json(
+        {
+          error: `Semester number must be between 1 and ${profile.totalSemesters}`
+        },
+        { status: 400 }
+      );
+    }
+
     const semester = await prisma.semester.update({
       where: {
         id: params.semesterId
       },
       data: {
         index: parsed.data.index,
-        name: parsed.data.name,
+        name: parsed.data.name ?? null,
+        status: parsed.data.status,
         subjects: {
           deleteMany: {},
           create: parsed.data.subjects.map((subject) => ({

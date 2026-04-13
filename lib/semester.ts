@@ -86,9 +86,10 @@ export const buildPerformanceSummary = (params: {
   minimumPassingMarks: number;
 }) => {
   const enrichedSemesters = withSemesterPercentages(params.semesters);
+  const finishedSemesters = enrichedSemesters.filter((semester) => semester.status === "FINISHED");
 
   const overallPercentage = calculateOverallPercentage(
-    enrichedSemesters.map((semester) => ({
+    finishedSemesters.map((semester) => ({
       subjects: semester.subjects.map((subject) => ({
         credits: subject.credits,
         score: subject.score
@@ -99,7 +100,7 @@ export const buildPerformanceSummary = (params: {
   const projection = calculateRequiredAverage({
     idealPercentage: params.idealPercentage,
     totalSemesters: params.totalSemesters,
-    completedSemesterPercentages: [...enrichedSemesters]
+    completedSemesterPercentages: [...finishedSemesters]
       .sort((a, b) => a.index - b.index)
       .map((semester) => semester.percentage)
   });
@@ -130,6 +131,7 @@ export const buildPerformanceSummary = (params: {
     semesters: enrichedSemesters,
     overallPercentage,
     projection,
+    finishedSemesters: finishedSemesters.length,
     chanceStats,
     retakeQueues: {
       needSecondChance,

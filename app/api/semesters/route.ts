@@ -55,7 +55,7 @@ export async function GET() {
 
   return NextResponse.json({
     ...summary,
-    completedSemesters: semesters.length
+    completedSemesters: summary.finishedSemesters
   });
 }
 
@@ -80,16 +80,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const hasProfile = await prisma.profile.findUnique({
+    const profile = await prisma.profile.findUnique({
       where: {
         userId: session.user.id
       },
       select: {
-        id: true
+        id: true,
+        totalSemesters: true
       }
     });
 
-    if (!hasProfile) {
+    if (!profile) {
       return NextResponse.json(
         {
           error: "Please complete your profile before adding semesters"
@@ -100,11 +101,21 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
+    if (data.index > profile.totalSemesters) {
+      return NextResponse.json(
+        {
+          error: `Semester number must be between 1 and ${profile.totalSemesters}`
+        },
+        { status: 400 }
+      );
+    }
+
     const semester = await prisma.semester.create({
       data: {
         userId: session.user.id,
         index: data.index,
-        name: data.name,
+        name: data.name ?? null,
+        status: data.status,
         subjects: {
           create: data.subjects.map((subject) => ({
             name: subject.name,

@@ -71,6 +71,8 @@ export const profileTargetSchema = z.object({
   totalSemesters: z.coerce.number().int().min(1).max(20)
 });
 
+export const semesterStatusSchema = z.enum(["ONGOING", "FINISHED"]);
+
 export const subjectInputSchema = z.object({
   name: z.string().trim().min(1),
   credits: z.coerce.number().positive().max(100),
@@ -82,8 +84,9 @@ export const subjectInputSchema = z.object({
 });
 
 export const createSemesterSchema = z.object({
-  index: z.coerce.number().int().min(1).max(24),
+  index: z.coerce.number().int().min(1).max(50),
   name: cleanedOptionalString,
+  status: semesterStatusSchema.default("FINISHED"),
   subjects: z.array(subjectInputSchema).min(1).max(30)
 });
 
@@ -101,4 +104,29 @@ export const friendRequestSchema = z.object({
 
 export const friendRequestActionSchema = z.object({
   action: z.enum(["ACCEPT", "REJECT"])
+});
+
+export const postVisibilitySchema = z.enum(["FRIENDS", "PUBLIC"]);
+
+export const createPostSchema = z.object({
+  content: z.string().trim().max(2000).default(""),
+  visibility: postVisibilitySchema.default("FRIENDS"),
+  includeOverallPercentage: z.boolean().optional().default(false),
+  sharedSemesterIds: z.array(z.string().min(1)).max(20).default([])
+}).superRefine((value, context) => {
+  if (
+    value.content.trim().length === 0 &&
+    !value.includeOverallPercentage &&
+    value.sharedSemesterIds.length === 0
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Add text or share semesters/overall percentage before posting",
+      path: ["content"]
+    });
+  }
+});
+
+export const createCommentSchema = z.object({
+  content: z.string().trim().min(1).max(1000)
 });

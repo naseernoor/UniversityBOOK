@@ -23,6 +23,7 @@ type Semester = {
   id: string;
   index: number;
   name: string | null;
+  status: "ONGOING" | "FINISHED";
   percentage: number;
   subjects: Subject[];
 };
@@ -158,7 +159,9 @@ export default function FriendProfileClient({ userId }: FriendProfileClientProps
                 Semester {semester.index}
                 {semester.name ? ` - ${semester.name}` : ""}
               </h3>
-              <p className="text-sm text-brand-700">Percentage: {semester.percentage.toFixed(2)}%</p>
+              <p className="text-sm text-brand-700">
+                Status: {semester.status} · Percentage: {semester.percentage.toFixed(2)}%
+              </p>
 
               <div className="mt-3 overflow-hidden rounded-lg border border-brand-200">
                 <table className="min-w-full divide-y divide-brand-200 text-sm">

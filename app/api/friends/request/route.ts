@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { createNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { friendRequestSchema } from "@/lib/validators";
 
@@ -89,6 +90,38 @@ export async function POST(request: Request) {
           status: "PENDING"
         }
       });
+    });
+
+    const requester = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        username: true,
+        email: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+
+    const requesterName = requester?.profile
+      ? `${requester.profile.firstName} ${requester.profile.lastName}`
+      : requester?.username ?? requester?.email ?? "A student";
+
+    await createNotification({
+      userId: targetUserId,
+      actorId: session.user.id,
+      type: "FRIEND_REQUEST",
+      title: "New friend request",
+      body: `${requesterName} sent you a friend request`,
+      link: "/friends",
+      data: {
+        senderId: session.user.id
+      }
     });
 
     return NextResponse.json({ message: "Friend request sent" });

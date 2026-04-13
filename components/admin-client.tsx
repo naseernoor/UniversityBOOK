@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { toAssetUrl } from "@/lib/blob-url";
+
 type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN";
 type VerificationStatus = "PENDING" | "APPROVED" | "REJECTED";
 type SemesterVerificationStatus = "NOT_REQUESTED" | "PENDING" | "APPROVED" | "REJECTED";
@@ -433,7 +435,12 @@ export default function AdminClient({ actor }: AdminClientProps) {
                   {request.documentType} · {formatDate(request.createdAt)}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <a className="btn-secondary" href={request.documentUrl} target="_blank" rel="noreferrer">
+                  <a
+                    className="btn-secondary"
+                    href={toAssetUrl(request.documentUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     Open document
                   </a>
                   <button
@@ -476,7 +483,7 @@ export default function AdminClient({ actor }: AdminClientProps) {
                   {semester.verificationDocumentUrl ? (
                     <a
                       className="btn-secondary"
-                      href={semester.verificationDocumentUrl}
+                      href={toAssetUrl(semester.verificationDocumentUrl)}
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -559,4 +566,3 @@ export default function AdminClient({ actor }: AdminClientProps) {
     </div>
   );
 }
-

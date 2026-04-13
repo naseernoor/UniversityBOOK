@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 
+import { toAssetUrl } from "@/lib/blob-url";
+
 type LectureMaterial = {
   name: string;
   url: string;
@@ -31,6 +33,7 @@ type Semester = {
 type Profile = {
   firstName: string;
   lastName: string;
+  gender?: "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY";
   university: string;
   faculty: string;
   department: string;
@@ -114,7 +117,7 @@ export default function FriendProfileClient({ userId }: FriendProfileClientProps
             </p>
           </div>
           <Image
-            src={data.user.image ?? "/avatar-placeholder.svg"}
+            src={toAssetUrl(data.user.image) || "/avatar-placeholder.svg"}
             alt="Profile"
             width={64}
             height={64}
@@ -143,6 +146,7 @@ export default function FriendProfileClient({ userId }: FriendProfileClientProps
             value={`${data.user.profile?.firstName ?? ""} ${data.user.profile?.lastName ?? ""}`.trim()}
           />
           <Info label="University" value={data.user.profile?.university ?? "-"} />
+          <Info label="Gender" value={data.user.profile?.gender ?? "-"} />
           <Info label="Faculty" value={data.user.profile?.faculty ?? "-"} />
           <Info label="Department" value={data.user.profile?.department ?? "-"} />
           <Info label="Degree" value={data.user.profile?.degreeLevel ?? "-"} />

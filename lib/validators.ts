@@ -25,6 +25,7 @@ export const profileDetailsSchema = z.object({
   firstName: z.string().trim().min(2, "First name is required"),
   lastName: z.string().trim().min(2, "Last name is required"),
   fatherName: z.string().trim().min(2, "Father name is required"),
+  gender: z.enum(["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY"]).default("PREFER_NOT_TO_SAY"),
   university: z.string().trim().min(2, "University is required"),
   faculty: z.string().trim().min(2, "Faculty is required"),
   department: z.string().trim().min(2, "Department is required"),
@@ -104,6 +105,15 @@ export const friendRequestSchema = z.object({
 
 export const friendRequestActionSchema = z.object({
   action: z.enum(["ACCEPT", "REJECT"])
+});
+
+export const messageSendSchema = z.object({
+  content: z.string().trim().min(1).max(5000)
+});
+
+export const notificationReadSchema = z.object({
+  notificationId: z.string().trim().min(1).optional(),
+  markAll: z.boolean().optional().default(false)
 });
 
 export const postVisibilitySchema = z.enum(["FRIENDS", "PUBLIC"]);

@@ -5,6 +5,7 @@ import path from "path";
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { toBlobProxyUrl } from "@/lib/blob-url";
 
 export const runtime = "nodejs";
 
@@ -60,9 +61,9 @@ export async function POST(request: Request) {
       const cleanOriginalName = getSafeFileName(file.name || "lecture-file");
       const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}-${cleanOriginalName}`;
       const blob = await put(`lectures/${session.user.id}/${fileName}`, file, {
-        access: "public"
+        access: "private"
       });
-      fileUrl = blob.url;
+      fileUrl = toBlobProxyUrl(blob.url);
     } else {
       const uploadsDirectory = path.join(process.cwd(), "public", "uploads", "lectures", session.user.id);
       await fs.mkdir(uploadsDirectory, { recursive: true });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { notifyAdmins } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { profileVerificationRequestSchema } from "@/lib/validators";
 
@@ -84,6 +85,38 @@ export async function POST(request: Request) {
       }
     });
 
+    const requester = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        username: true,
+        email: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+
+    const requesterName = requester?.profile
+      ? `${requester.profile.firstName} ${requester.profile.lastName}`
+      : requester?.username ?? requester?.email ?? "A student";
+
+    await notifyAdmins({
+      actorId: session.user.id,
+      type: "PROFILE_VERIFICATION_REQUEST",
+      title: "New profile verification request",
+      body: `${requesterName} submitted a verification document`,
+      link: "/admin",
+      data: {
+        requestId: created.id,
+        userId: session.user.id
+      }
+    });
+
     return NextResponse.json({
       message: "Verification request submitted",
       request: created
@@ -93,4 +126,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
-

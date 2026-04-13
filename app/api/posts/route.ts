@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
 import { resolveMentionedUsers } from "@/lib/mentions";
+import { createNotificationsBulk } from "@/lib/notifications";
 import { getFeedPosts, getPostByIdForViewer } from "@/lib/posts";
 import { prisma } from "@/lib/prisma";
 import { buildPerformanceSummary } from "@/lib/semester";
@@ -139,6 +140,42 @@ export async function POST(request: Request) {
         id: true
       }
     });
+
+    const author = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        username: true,
+        email: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+
+    const authorName = author?.profile
+      ? `${author.profile.firstName} ${author.profile.lastName}`
+      : author?.username ?? author?.email ?? "A friend";
+
+    await createNotificationsBulk(
+      mentions
+        .filter((mentionedUser) => mentionedUser.id !== session.user.id)
+        .map((mentionedUser) => ({
+          userId: mentionedUser.id,
+          actorId: session.user.id,
+          type: "POST_MENTION" as const,
+          title: "You were mentioned in a post",
+          body: `${authorName} mentioned you in a post`,
+          link: "/dashboard",
+          data: {
+            postId: created.id
+          }
+        }))
+    );
 
     const post = await getPostByIdForViewer(created.id, session.user.id);
 

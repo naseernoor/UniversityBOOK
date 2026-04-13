@@ -1,13 +1,18 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import { toAssetUrl } from "@/lib/blob-url";
 
 type Friend = {
   id: string;
   name: string | null;
   username: string | null;
   email: string | null;
+  image?: string | null;
+  isBlueVerified?: boolean;
   profile: {
     firstName: string;
     lastName: string;
@@ -25,6 +30,24 @@ type SearchResult = {
   } | null;
   relationshipStatus: "NONE" | "PENDING_SENT" | "PENDING_RECEIVED" | "FRIENDS";
   acceptsRequests?: boolean;
+};
+
+type SuggestedFriend = {
+  id: string;
+  username: string | null;
+  email: string | null;
+  image: string | null;
+  isBlueVerified: boolean;
+  profile: {
+    firstName: string;
+    lastName: string;
+    university: string;
+    faculty: string;
+    department: string;
+  };
+  acceptsRequests: boolean;
+  score: number;
+  reasons: string[];
 };
 
 type IncomingRequest = {
@@ -49,26 +72,91 @@ type OutgoingRequest = {
   };
 };
 
+type Conversation = {
+  friend: Friend;
+  latestMessage: {
+    id: string;
+    senderId: string;
+    recipientId: string;
+    content: string;
+    createdAt: string;
+  } | null;
+  unreadCount: number;
+};
+
+type DirectMessage = {
+  id: string;
+  senderId: string;
+  recipientId: string;
+  content: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+const formatDate = (value: string) =>
+  new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+const personName = (params: {
+  username: string | null;
+  email: string | null;
+  name?: string | null;
+  profile?: {
+    firstName: string;
+    lastName: string;
+  } | null;
+}) =>
+  params.profile
+    ? `${params.profile.firstName} ${params.profile.lastName}`
+    : params.username ?? params.email ?? params.name ?? "User";
+
 export default function FriendsClient() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<IncomingRequest[]>([]);
   const [outgoing, setOutgoing] = useState<OutgoingRequest[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestedFriend[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [selectedFriendId, setSelectedFriendId] = useState<string>("");
+  const [messageDraft, setMessageDraft] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  const selectedFriend = useMemo(
+    () =>
+      conversations.find((conversation) => conversation.friend.id === selectedFriendId)?.friend ??
+      friends.find((friend) => friend.id === selectedFriendId) ??
+      null,
+    [conversations, friends, selectedFriendId]
+  );
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
 
-    const [friendsResponse, requestsResponse] = await Promise.all([
-      fetch("/api/friends/list"),
-      fetch("/api/friends/requests")
-    ]);
+    const [friendsResponse, requestsResponse, suggestionsResponse, conversationsResponse] =
+      await Promise.all([
+        fetch("/api/friends/list"),
+        fetch("/api/friends/requests"),
+        fetch("/api/friends/suggestions"),
+        fetch("/api/messages/conversations")
+      ]);
 
-    if (!friendsResponse.ok || !requestsResponse.ok) {
+    if (
+      !friendsResponse.ok ||
+      !requestsResponse.ok ||
+      !suggestionsResponse.ok ||
+      !conversationsResponse.ok
+    ) {
       setLoading(false);
       setError("Failed to load friends data");
       return;
@@ -79,16 +167,43 @@ export default function FriendsClient() {
       incoming: IncomingRequest[];
       outgoing: OutgoingRequest[];
     };
+    const suggestionsData = (await suggestionsResponse.json()) as { suggestions: SuggestedFriend[] };
+    const conversationsData = (await conversationsResponse.json()) as { conversations: Conversation[] };
 
     setFriends(friendsData.friends);
     setIncoming(requestsData.incoming);
     setOutgoing(requestsData.outgoing);
+    setSuggestions(suggestionsData.suggestions);
+    setConversations(conversationsData.conversations);
     setLoading(false);
   };
 
   useEffect(() => {
     void loadData();
   }, []);
+
+  const loadMessages = async (friendId: string) => {
+    if (!friendId) {
+      setMessages([]);
+      return;
+    }
+
+    setLoadingMessages(true);
+    setError(null);
+
+    const response = await fetch(`/api/messages/${friendId}`);
+    const data = (await response.json()) as { messages?: DirectMessage[]; error?: string };
+
+    if (!response.ok || !data.messages) {
+      setLoadingMessages(false);
+      setError(data.error ?? "Failed to load messages");
+      return;
+    }
+
+    setMessages(data.messages);
+    setLoadingMessages(false);
+    await loadData();
+  };
 
   const searchUsers = async () => {
     setError(null);
@@ -199,17 +314,58 @@ export default function FriendsClient() {
       return;
     }
 
+    if (selectedFriendId === friendId) {
+      setSelectedFriendId("");
+      setMessages([]);
+    }
+
     setMessage(data.message ?? "Friend removed");
     await searchUsers();
     await loadData();
   };
 
+  const sendMessage = async () => {
+    if (!selectedFriendId) {
+      setError("Select a friend to start messaging");
+      return;
+    }
+
+    const content = messageDraft.trim();
+    if (!content) {
+      setError("Message cannot be empty");
+      return;
+    }
+
+    setSendingMessage(true);
+    setError(null);
+
+    const response = await fetch(`/api/messages/${selectedFriendId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ content })
+    });
+
+    const data = (await response.json()) as { error?: string; message?: DirectMessage };
+    setSendingMessage(false);
+
+    if (!response.ok || !data.message) {
+      setError(data.error ?? "Failed to send message");
+      return;
+    }
+
+    setMessageDraft("");
+    setMessages((previous) => [...previous, data.message as DirectMessage]);
+    await loadData();
+  };
+
   return (
     <div className="space-y-6">
-      <section className="panel bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white">
-        <h1 className="text-2xl font-semibold">Friends & Sharing</h1>
+      <section className="hero-panel">
+        <h1 className="text-3xl font-black text-white">Friends, Suggestions, Messages</h1>
         <p className="mt-2 text-sm text-brand-50">
-          Search by username or email, connect with friends, and let them view selected semesters.
+          Find friends, discover suggested connections, and chat privately with accepted friends.
         </p>
       </section>
 
@@ -218,6 +374,61 @@ export default function FriendsClient() {
       {message ? (
         <div className="panel border-emerald-200 text-sm font-medium text-emerald-700">{message}</div>
       ) : null}
+
+      <section className="panel space-y-3">
+        <h2 className="text-lg font-semibold text-brand-900">Suggested friends for you</h2>
+        {suggestions.length === 0 ? (
+          <p className="text-sm text-brand-700">No suggestions right now. Add more profile details to improve matching.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {suggestions.map((user) => (
+              <article key={user.id} className="rounded-2xl border border-brand-200 bg-white p-4">
+                <div className="flex items-center gap-3">
+                  <Image
+                    src={toAssetUrl(user.image) || "/avatar-placeholder.svg"}
+                    alt="Suggested friend"
+                    width={42}
+                    height={42}
+                    className="h-11 w-11 rounded-xl border border-brand-200 object-cover"
+                  />
+                  <div>
+                    <p className="font-semibold text-brand-900">
+                      {personName({
+                        username: user.username,
+                        email: user.email,
+                        profile: {
+                          firstName: user.profile.firstName,
+                          lastName: user.profile.lastName
+                        }
+                      })}
+                      {user.isBlueVerified ? (
+                        <span className="ml-2 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] text-sky-700">
+                          Verified
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-brand-700">
+                      Match score: <strong>{user.score}</strong>
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-brand-700">
+                  {user.profile.university} · {user.profile.faculty}
+                </p>
+                <p className="mt-1 text-xs text-brand-600">{user.reasons.join(" · ") || "Suggested for you"}</p>
+                <button
+                  type="button"
+                  className="btn-secondary mt-3 w-full"
+                  disabled={!user.acceptsRequests}
+                  onClick={() => sendRequest(user.id)}
+                >
+                  {user.acceptsRequests ? "Send friend request" : "Requests closed"}
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="panel space-y-3">
         <h2 className="text-lg font-semibold text-brand-900">Find users</h2>
@@ -355,36 +566,110 @@ export default function FriendsClient() {
         </div>
       </section>
 
-      <section className="panel space-y-3">
-        <h2 className="text-lg font-semibold text-brand-900">Friends ({friends.length})</h2>
-        {friends.length === 0 ? (
-          <p className="text-sm text-brand-700">You have no friends added yet.</p>
-        ) : (
-          friends.map((friend) => (
-            <article
-              key={friend.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand-200 bg-white p-3"
-            >
-              <div>
-                <p className="font-semibold text-brand-900">
-                  {friend.username ?? friend.email ?? friend.name ?? "Friend"}
-                </p>
-                <p className="text-sm text-brand-700">
-                  {friend.profile
-                    ? `${friend.profile.firstName} ${friend.profile.lastName}`
-                    : "Profile not completed"}
-                </p>
+      <section className="grid gap-5 xl:grid-cols-[1.3fr,1.7fr]">
+        <div className="panel space-y-3">
+          <h2 className="text-lg font-semibold text-brand-900">Friends ({friends.length})</h2>
+          {friends.length === 0 ? (
+            <p className="text-sm text-brand-700">You have no friends added yet.</p>
+          ) : (
+            friends.map((friend) => (
+              <article
+                key={friend.id}
+                className={`rounded-xl border p-3 ${
+                  selectedFriendId === friend.id
+                    ? "border-brand-400 bg-brand-50"
+                    : "border-brand-200 bg-white"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    className="text-left"
+                    onClick={() => {
+                      setSelectedFriendId(friend.id);
+                      void loadMessages(friend.id);
+                    }}
+                  >
+                    <p className="font-semibold text-brand-900">
+                      {friend.username ?? friend.email ?? friend.name ?? "Friend"}
+                    </p>
+                    <p className="text-sm text-brand-700">
+                      {friend.profile
+                        ? `${friend.profile.firstName} ${friend.profile.lastName}`
+                        : "Profile not completed"}
+                    </p>
+                  </button>
+
+                  <div className="flex gap-2">
+                    <Link href={`/user/${friend.id}`} className="btn-secondary">
+                      Profile
+                    </Link>
+                    <button type="button" className="btn-secondary" onClick={() => removeFriend(friend.id)}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+
+        <div className="panel space-y-3">
+          <h2 className="text-lg font-semibold text-brand-900">
+            Messages {selectedFriend ? `with ${personName(selectedFriend)}` : ""}
+          </h2>
+          {!selectedFriend ? (
+            <p className="text-sm text-brand-700">Select a friend from the left to start messaging.</p>
+          ) : (
+            <>
+              <div className="h-[420px] space-y-2 overflow-y-auto rounded-xl border border-brand-200 bg-brand-50 p-3">
+                {loadingMessages ? (
+                  <p className="text-sm text-brand-700">Loading messages...</p>
+                ) : messages.length === 0 ? (
+                  <p className="text-sm text-brand-700">No messages yet. Say hello.</p>
+                ) : (
+                  messages.map((item) => {
+                    const mine = item.senderId !== selectedFriend.id;
+                    return (
+                      <div key={item.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                        <article
+                          className={`max-w-[78%] rounded-2xl px-3 py-2 ${
+                            mine ? "bg-brand-700 text-white" : "border border-brand-200 bg-white text-brand-900"
+                          }`}
+                        >
+                          <p className="font-pashto whitespace-pre-wrap text-sm" dir="auto">
+                            {item.content}
+                          </p>
+                          <p className={`mt-1 text-[11px] ${mine ? "text-brand-100" : "text-brand-600"}`}>
+                            {formatDate(item.createdAt)}
+                          </p>
+                        </article>
+                      </div>
+                    );
+                  })
+                )}
               </div>
 
-              <Link href={`/user/${friend.id}`} className="btn-secondary">
-                View shared profile
-              </Link>
-              <button type="button" className="btn-secondary" onClick={() => removeFriend(friend.id)}>
-                Remove friend
-              </button>
-            </article>
-          ))
-        )}
+              <div className="flex gap-2">
+                <textarea
+                  className="input font-pashto min-h-16"
+                  dir="auto"
+                  placeholder="Write your message..."
+                  value={messageDraft}
+                  onChange={(event) => setMessageDraft(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={sendingMessage}
+                  onClick={() => void sendMessage()}
+                >
+                  {sendingMessage ? "Sending..." : "Send"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </section>
     </div>
   );

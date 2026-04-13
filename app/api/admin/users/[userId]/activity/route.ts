@@ -46,7 +46,7 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const [posts, comments, friendRequests, semesters, profileVerifications, adminActions] =
+  const [posts, comments, friendRequests, semesters, profileVerifications, adminActions, notifications, messages] =
     await Promise.all([
       prisma.post.findMany({
         where: {
@@ -163,6 +163,40 @@ export async function GET(_request: Request, { params }: Params) {
           createdAt: "desc"
         },
         take: 80
+      }),
+      prisma.notification.findMany({
+        where: {
+          userId: user.id
+        },
+        select: {
+          id: true,
+          type: true,
+          title: true,
+          body: true,
+          readAt: true,
+          createdAt: true
+        },
+        orderBy: {
+          createdAt: "desc"
+        },
+        take: 80
+      }),
+      prisma.message.findMany({
+        where: {
+          OR: [{ senderId: user.id }, { recipientId: user.id }]
+        },
+        select: {
+          id: true,
+          senderId: true,
+          recipientId: true,
+          content: true,
+          readAt: true,
+          createdAt: true
+        },
+        orderBy: {
+          createdAt: "desc"
+        },
+        take: 120
       })
     ]);
 
@@ -174,8 +208,9 @@ export async function GET(_request: Request, { params }: Params) {
       friendRequests,
       semesters,
       profileVerifications,
-      adminActions
+      adminActions,
+      notifications,
+      messages
     }
   });
 }
-

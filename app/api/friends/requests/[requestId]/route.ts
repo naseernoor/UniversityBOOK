@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { createNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { friendRequestActionSchema } from "@/lib/validators";
 
@@ -32,7 +33,8 @@ export async function PATCH(request: Request, { params }: Params) {
         status: "PENDING"
       },
       select: {
-        id: true
+        id: true,
+        senderId: true
       }
     });
 
@@ -50,6 +52,40 @@ export async function PATCH(request: Request, { params }: Params) {
         status
       }
     });
+
+    if (status === "ACCEPTED") {
+      const recipient = await prisma.user.findUnique({
+        where: {
+          id: session.user.id
+        },
+        select: {
+          username: true,
+          email: true,
+          profile: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          }
+        }
+      });
+
+      const recipientName = recipient?.profile
+        ? `${recipient.profile.firstName} ${recipient.profile.lastName}`
+        : recipient?.username ?? recipient?.email ?? "A student";
+
+      await createNotification({
+        userId: friendRequest.senderId,
+        actorId: session.user.id,
+        type: "FRIEND_REQUEST_ACCEPTED",
+        title: "Friend request accepted",
+        body: `${recipientName} accepted your friend request`,
+        link: "/friends",
+        data: {
+          recipientId: session.user.id
+        }
+      });
+    }
 
     return NextResponse.json({ message: `Request ${status.toLowerCase()}` });
   } catch (error) {

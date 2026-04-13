@@ -54,6 +54,7 @@ export async function POST(request: Request) {
             firstName: data.firstName,
             lastName: data.lastName,
             fatherName: data.fatherName,
+            gender: data.gender,
             university: data.university,
             faculty: data.faculty,
             department: data.department,

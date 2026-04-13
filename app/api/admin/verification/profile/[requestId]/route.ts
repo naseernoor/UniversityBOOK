@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { createNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { isAdminRole } from "@/lib/roles";
 import { adminReviewSchema } from "@/lib/validators";
@@ -124,6 +125,26 @@ export async function PATCH(request: Request, { params }: Params) {
       };
     });
 
+    await createNotification({
+      userId: verificationRequest.userId,
+      actorId: actor.id,
+      type: "PROFILE_VERIFICATION_STATUS",
+      title:
+        nextStatus === "APPROVED"
+          ? "Profile verification approved"
+          : "Profile verification rejected",
+      body:
+        nextStatus === "APPROVED"
+          ? "Your blue badge verification has been approved"
+          : "Your blue badge verification was rejected. You can submit again.",
+      link: "/dashboard",
+      data: {
+        requestId: verificationRequest.id,
+        status: nextStatus,
+        note: parsed.data.note ?? null
+      }
+    });
+
     return NextResponse.json({
       message: `Request ${nextStatus.toLowerCase()}`,
       ...result
@@ -133,4 +154,3 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
-

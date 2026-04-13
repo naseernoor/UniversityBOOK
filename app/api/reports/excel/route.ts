@@ -137,6 +137,7 @@ export async function GET() {
     ["First Name", user.profile.firstName],
     ["Last Name", user.profile.lastName],
     ["Father Name", user.profile.fatherName],
+    ["Gender", user.profile.gender],
     ["University", user.profile.university],
     ["Faculty", user.profile.faculty],
     ["Department", user.profile.department],

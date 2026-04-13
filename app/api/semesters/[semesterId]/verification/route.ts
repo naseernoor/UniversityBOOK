@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { createNotification, notifyAdmins } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { isAdminRole } from "@/lib/roles";
 import { adminReviewSchema, semesterVerificationRequestSchema } from "@/lib/validators";
@@ -65,6 +66,38 @@ export async function POST(request: Request, { params }: Params) {
       select: {
         id: true,
         verificationStatus: true
+      }
+    });
+
+    const requester = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        username: true,
+        email: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+
+    const requesterName = requester?.profile
+      ? `${requester.profile.firstName} ${requester.profile.lastName}`
+      : requester?.username ?? requester?.email ?? "A student";
+
+    await notifyAdmins({
+      actorId: session.user.id,
+      type: "SEMESTER_VERIFICATION_REQUEST",
+      title: "New semester verification request",
+      body: `${requesterName} submitted semester marks for review`,
+      link: "/admin",
+      data: {
+        semesterId: params.semesterId,
+        userId: session.user.id
       }
     });
 
@@ -162,6 +195,26 @@ export async function PATCH(request: Request, { params }: Params) {
       }
     });
 
+    await createNotification({
+      userId: semester.userId,
+      actorId: actor.id,
+      type: "SEMESTER_VERIFICATION_STATUS",
+      title:
+        nextStatus === "APPROVED"
+          ? "Semester verification approved"
+          : "Semester verification rejected",
+      body:
+        nextStatus === "APPROVED"
+          ? "Your semester marks have been verified by admin"
+          : "Your semester verification was rejected. Please review and resubmit.",
+      link: "/dashboard",
+      data: {
+        semesterId: semester.id,
+        status: nextStatus,
+        note: parsed.data.note ?? null
+      }
+    });
+
     return NextResponse.json({
       message: `Semester marked as ${nextStatus.toLowerCase()}`,
       semester: updated
@@ -171,4 +224,3 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
-

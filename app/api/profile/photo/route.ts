@@ -5,6 +5,7 @@ import path from "path";
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { toBlobProxyUrl, toBlobUrlForDelete } from "@/lib/blob-url";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -32,8 +33,6 @@ const getExtension = (fileName: string, mimeType: string) => {
 const isBlobEnabled = () =>
   typeof process.env.BLOB_READ_WRITE_TOKEN === "string" &&
   process.env.BLOB_READ_WRITE_TOKEN.trim().length > 0;
-
-const isBlobUrl = (value: string) => value.includes(".blob.vercel-storage.com/");
 
 export async function POST(request: Request) {
   const session = await getServerAuthSession();
@@ -78,13 +77,14 @@ export async function POST(request: Request) {
       const extension = getExtension(file.name, file.type);
       const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
       const blob = await put(`profile/${session.user.id}/${fileName}`, file, {
-        access: "public"
+        access: "private"
       });
 
-      imageUrl = blob.url;
+      imageUrl = toBlobProxyUrl(blob.url);
 
-      if (existingUser?.image && isBlobUrl(existingUser.image)) {
-        await del(existingUser.image).catch(() => undefined);
+      const previousBlobUrl = toBlobUrlForDelete(existingUser?.image);
+      if (previousBlobUrl) {
+        await del(previousBlobUrl).catch(() => undefined);
       }
     } else {
       const uploadsDirectory = path.join(process.cwd(), "public", "uploads", "profile");

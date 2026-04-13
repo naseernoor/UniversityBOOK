@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DEGREE_DEFAULT_SEMESTERS, DEGREE_LABELS, DegreeLevel } from "@/lib/academic";
+import { toAssetUrl } from "@/lib/blob-url";
 
 type SemesterStatus = "ONGOING" | "FINISHED";
 type PostVisibility = "FRIENDS" | "PUBLIC";
@@ -77,6 +78,7 @@ type Profile = {
   firstName: string;
   lastName: string;
   fatherName: string;
+  gender: "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY";
   university: string;
   faculty: string;
   department: string;
@@ -294,6 +296,8 @@ const formatDateTime = (value: string) =>
   });
 
 const mentionPartRegex = /(@[\p{L}\p{N}_.-]{3,30})/gu;
+const rtlRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/u;
+const hasRtlText = (value: string | null | undefined) => typeof value === "string" && rtlRegex.test(value);
 
 const renderContentWithMentions = (value: string) =>
   value.split(mentionPartRegex).map((part, index) =>
@@ -319,6 +323,14 @@ const getPersonDisplayName = (params: {
     return `${params.profile.firstName} ${params.profile.lastName}`;
   }
   return params.username ?? params.email ?? params.name ?? "User";
+};
+
+const toTranscriptCell = (value: string) => {
+  const escaped = escapeHtml(value);
+  if (rtlRegex.test(value)) {
+    return `<span style="display:block;direction:rtl;text-align:right;unicode-bidi:plaintext;font-family:'Noto Naskh Arabic','Cairo','Vazirmatn','Amiri',Tahoma,sans-serif;">${escaped}</span>`;
+  }
+  return escaped;
 };
 
 const updateCommentTree = (
@@ -369,6 +381,7 @@ const createInitialProfileForm = (user: UserPayload) => ({
   firstName: user.profile?.firstName ?? "",
   lastName: user.profile?.lastName ?? "",
   fatherName: user.profile?.fatherName ?? "",
+  gender: user.profile?.gender ?? "PREFER_NOT_TO_SAY",
   university: user.profile?.university ?? "",
   faculty: user.profile?.faculty ?? "",
   department: user.profile?.department ?? "",
@@ -656,6 +669,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       firstName: profileForm.firstName,
       lastName: profileForm.lastName,
       fatherName: profileForm.fatherName,
+      gender: profileForm.gender,
       university: profileForm.university,
       faculty: profileForm.faculty,
       department: profileForm.department,
@@ -1857,6 +1871,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       const infoRows: Array<[string, string]> = [
         ["Username", profileForm.username || "-"],
         ["Email", user.email ?? "-"],
+        ["Gender", profileForm.gender.replace(/_/g, " ")],
         ["Degree", DEGREE_LABELS[profileForm.degreeLevel]],
         ["Year Of Enrollment", String(profileForm.yearOfEnrollment)],
         ["Date Of Birth", profileForm.dateOfBirth || "-"],
@@ -1881,11 +1896,20 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       const infoTableRows = infoRows
         .map(
           ([field, value]) =>
-            `<tr><td style="padding:8px;border:1px solid #c7ded4;font-weight:700;">${escapeHtml(field)}</td><td style="padding:8px;border:1px solid #c7ded4;">${escapeHtml(value)}</td></tr>`
+            `<tr><td style="padding:8px;border:1px solid #c7ded4;font-weight:700;">${toTranscriptCell(field)}</td><td style="padding:8px;border:1px solid #c7ded4;">${toTranscriptCell(value)}</td></tr>`
         )
         .join("");
 
       const sortedSemesters = [...semesters].sort((a, b) => a.index - b.index);
+      const transcriptHasRtlContent = [
+        studentName,
+        ...infoRows.map(([, value]) => value),
+        ...sortedSemesters.flatMap((semester) => [
+          semester.name ?? "",
+          ...semester.subjects.flatMap((subject) => [subject.name, subject.code ?? "", subject.teacherName ?? ""])
+        ])
+      ].some((value) => hasRtlText(value));
+      const transcriptAlignment = transcriptHasRtlContent ? "right" : "left";
 
       const semesterBlocks = sortedSemesters
         .map((semester) => {
@@ -1906,24 +1930,24 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
           const headerCells = columns
             .map(
               (column) =>
-                `<th style="padding:8px;border:1px solid #c7ded4;background:#e7f5f0;text-align:left;">${escapeHtml(column)}</th>`
+                `<th style="padding:8px;border:1px solid #c7ded4;background:#e7f5f0;text-align:${transcriptAlignment};">${escapeHtml(column)}</th>`
             )
             .join("");
 
           const bodyRows = semester.subjects
             .map((subject) => {
-              const cells = [escapeHtml(subject.name), subject.score.toFixed(2)];
+              const cells = [toTranscriptCell(subject.name), toTranscriptCell(subject.score.toFixed(2))];
               if (transcriptOptions.showCredits) {
-                cells.push(String(subject.credits));
+                cells.push(toTranscriptCell(String(subject.credits)));
               }
               if (transcriptOptions.showChance) {
-                cells.push(String(subject.chance));
+                cells.push(toTranscriptCell(String(subject.chance)));
               }
               if (transcriptOptions.showCode) {
-                cells.push(escapeHtml(subject.code ?? "-"));
+                cells.push(toTranscriptCell(subject.code ?? "-"));
               }
               if (transcriptOptions.showTeacher) {
-                cells.push(escapeHtml(subject.teacherName ?? "-"));
+                cells.push(toTranscriptCell(subject.teacherName ?? "-"));
               }
 
               return `<tr>${cells
@@ -1935,7 +1959,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
           const statusText = transcriptOptions.showSemesterStatus ? ` (${semester.status})` : "";
           return `
             <section style="margin-top:16px;break-inside:avoid;">
-              <h3 style="margin:0 0 6px 0;color:#154d3f;">Semester ${formatSemesterNumber(semester.index, totalSemesters)}${semester.name ? ` - ${escapeHtml(semester.name)}` : ""}${statusText}</h3>
+              <h3 style="margin:0 0 6px 0;color:#154d3f;">Semester ${formatSemesterNumber(semester.index, totalSemesters)}${semester.name ? ` - ${toTranscriptCell(semester.name)}` : ""}${statusText}</h3>
               <p style="margin:0 0 8px 0;color:#2f5f54;">Semester Percentage: ${semester.percentage.toFixed(2)}%</p>
               <table style="width:100%;border-collapse:collapse;font-size:12px;">
                 <thead><tr>${headerCells}</tr></thead>
@@ -1953,8 +1977,10 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       container.style.color = "#13211d";
       container.style.width = "794px";
       container.style.margin = "0 auto";
+      container.style.direction = transcriptHasRtlContent ? "rtl" : "ltr";
+      container.style.unicodeBidi = "plaintext";
       container.innerHTML = `
-        <div style="font-family: Cairo, Vazirmatn, Amiri, Tahoma, sans-serif;">
+        <div lang="${transcriptHasRtlContent ? "fa" : "en"}" style="font-family: 'Noto Naskh Arabic', Cairo, Vazirmatn, Amiri, Tahoma, sans-serif;text-align:${transcriptAlignment};">
           <header style="background:linear-gradient(135deg,#0f5a49,#1f7a64);padding:18px;border-radius:14px;color:#fff;">
             <h1 style="margin:0;font-size:24px;">Official Academic Transcript</h1>
             <p style="margin:8px 0 0 0;font-size:13px;">UniBOOK - Student Report</p>
@@ -1972,6 +1998,9 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       `;
 
       document.body.appendChild(container);
+      if (document.fonts && "ready" in document.fonts) {
+        await document.fonts.ready;
+      }
 
       const safeUsername = (user.username ?? "student").replace(/[^a-zA-Z0-9_-]/g, "_");
       await html2pdf()
@@ -1979,7 +2008,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
           margin: 8,
           filename: `transcript-${safeUsername}.pdf`,
           image: { type: "jpeg", quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
+          html2canvas: { scale: 2, useCORS: true, foreignObjectRendering: true },
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
         })
         .from(container)
@@ -2000,7 +2029,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     if (media.mimeType?.startsWith("video/")) {
       return (
         <video key={media.id} controls className="max-h-72 w-full rounded-xl border border-brand-200 bg-black/90">
-          <source src={media.url} type={media.mimeType ?? undefined} />
+          <source src={toAssetUrl(media.url)} type={media.mimeType ?? undefined} />
           Your browser does not support video playback.
         </video>
       );
@@ -2009,7 +2038,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     return (
       <Image
         key={media.id}
-        src={media.url}
+        src={toAssetUrl(media.url)}
         alt={media.fileName ?? "Post media"}
         width={1200}
         height={700}
@@ -2276,7 +2305,12 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 key={`${material.url}-${materialIndex}`}
                 className="flex items-center justify-between gap-2 rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm"
               >
-                <a href={material.url} target="_blank" rel="noreferrer" className="truncate text-brand-800 underline">
+                <a
+                  href={toAssetUrl(material.url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="truncate text-brand-800 underline"
+                >
                   {material.name}
                 </a>
                 <button
@@ -2307,7 +2341,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
           </div>
           <div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 backdrop-blur">
             <Image
-              src={user.image ?? "/avatar-placeholder.svg"}
+              src={toAssetUrl(user.image) || "/avatar-placeholder.svg"}
               alt="Profile"
               width={64}
               height={64}
@@ -2447,11 +2481,11 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                       <div key={media.id} className="rounded-xl border border-brand-200 bg-brand-50 p-2">
                         {media.mimeType?.startsWith("video/") ? (
                           <video controls className="h-40 w-full rounded-lg object-cover">
-                            <source src={media.url} type={media.mimeType ?? undefined} />
+                            <source src={toAssetUrl(media.url)} type={media.mimeType ?? undefined} />
                           </video>
                         ) : (
                           <Image
-                            src={media.url}
+                            src={toAssetUrl(media.url)}
                             alt={media.fileName ?? "Media"}
                             width={640}
                             height={360}
@@ -2520,7 +2554,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <Image
-                        src={post.author.image ?? "/avatar-placeholder.svg"}
+                        src={toAssetUrl(post.author.image) || "/avatar-placeholder.svg"}
                         alt="Author"
                         width={44}
                         height={44}
@@ -2830,6 +2864,25 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 />
               </Field>
 
+              <Field label="Gender" required>
+                <select
+                  className="input"
+                  value={profileForm.gender}
+                  onChange={(event) =>
+                    setProfileForm((previous) => ({
+                      ...previous,
+                      gender: event.target.value as "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY"
+                    }))
+                  }
+                  required
+                >
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                  <option value="OTHER">Other</option>
+                  <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+                </select>
+              </Field>
+
               <Field label="University" required>
                 <input
                   className="input"
@@ -3033,7 +3086,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                   </label>
                   {profileVerificationForm.documentUrl ? (
                     <a
-                      href={profileVerificationForm.documentUrl}
+                      href={toAssetUrl(profileVerificationForm.documentUrl)}
                       target="_blank"
                       rel="noreferrer"
                       className="btn-secondary"
@@ -3490,7 +3543,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                           </div>
                           {semester.verificationDocumentUrl ? (
                             <a
-                              href={semester.verificationDocumentUrl}
+                              href={toAssetUrl(semester.verificationDocumentUrl)}
                               target="_blank"
                               rel="noreferrer"
                               className="btn-secondary"

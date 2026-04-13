@@ -35,6 +35,8 @@ export const getAcceptedFriends = async (userId: string) => {
       name: true,
       username: true,
       email: true,
+      image: true,
+      isBlueVerified: true,
       profile: {
         select: {
           firstName: true,
@@ -81,4 +83,27 @@ export const getRelationshipStatus = async (currentUserId: string, targetUserId:
   }
 
   return "NONE" as const;
+};
+
+export const areUsersFriends = async (userId: string, otherUserId: string) => {
+  const relation = await prisma.friendRequest.findFirst({
+    where: {
+      status: "ACCEPTED",
+      OR: [
+        {
+          senderId: userId,
+          recipientId: otherUserId
+        },
+        {
+          senderId: otherUserId,
+          recipientId: userId
+        }
+      ]
+    },
+    select: {
+      id: true
+    }
+  });
+
+  return Boolean(relation);
 };

@@ -13,6 +13,7 @@ type RegisterPayload = {
   firstName: string;
   lastName: string;
   fatherName: string;
+  gender: "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY";
   university: string;
   faculty: string;
   department: string;
@@ -47,6 +48,7 @@ export default function RegisterForm() {
     firstName: "",
     lastName: "",
     fatherName: "",
+    gender: "PREFER_NOT_TO_SAY" as "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY",
     university: "",
     faculty: "",
     department: "",
@@ -153,6 +155,7 @@ export default function RegisterForm() {
       firstName: form.firstName,
       lastName: form.lastName,
       fatherName: form.fatherName,
+      gender: form.gender,
       university: form.university,
       faculty: form.faculty,
       department: form.department,
@@ -291,6 +294,25 @@ export default function RegisterForm() {
               onChange={(event) => setField("fatherName", event.target.value)}
               required
             />
+          </Field>
+
+          <Field label="Gender" required>
+            <select
+              className="input"
+              value={form.gender}
+              onChange={(event) =>
+                setField(
+                  "gender",
+                  event.target.value as "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY"
+                )
+              }
+              required
+            >
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="OTHER">Other</option>
+              <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+            </select>
           </Field>
 
           <Field label="University" required>

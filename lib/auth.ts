@@ -7,6 +7,7 @@ import GoogleProvider from "next-auth/providers/google";
 
 import { sendTwoFactorCode } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
+import { getSuperAdminEmails } from "@/lib/roles";
 import { consumeTwoFactorCode, createTwoFactorCode } from "@/lib/tokens";
 
 const providers: NextAuthOptions["providers"] = [
@@ -79,7 +80,9 @@ const providers: NextAuthOptions["providers"] = [
         name: user.name,
         email: user.email,
         image: user.image,
-        username: user.username
+        username: user.username,
+        role: user.role,
+        isBlueVerified: user.isBlueVerified
       };
     }
   })
@@ -130,7 +133,9 @@ export const authOptions: NextAuthOptions = {
             id: true,
             username: true,
             name: true,
-            image: true
+            image: true,
+            role: true,
+            isBlueVerified: true
           }
         });
 
@@ -139,6 +144,8 @@ export const authOptions: NextAuthOptions = {
           token.username = dbUser.username ?? undefined;
           token.name = dbUser.name ?? token.name;
           token.picture = dbUser.image ?? token.picture;
+          token.role = dbUser.role;
+          token.isBlueVerified = dbUser.isBlueVerified;
         }
       }
 
@@ -149,17 +156,23 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id;
         session.user.username = typeof token.username === "string" ? token.username : undefined;
         session.user.image = typeof token.picture === "string" ? token.picture : session.user.image;
+        session.user.role = token.role;
+        session.user.isBlueVerified = Boolean(token.isBlueVerified);
       }
       return session;
     },
     async signIn({ user, account }) {
       if (user.email) {
+        const superAdmins = getSuperAdminEmails();
+        const nextRole = superAdmins.includes(user.email.toLowerCase()) ? "SUPER_ADMIN" : undefined;
+
         await prisma.user.update({
           where: {
             email: user.email
           },
           data: {
             name: user.name ?? undefined,
+            ...(nextRole ? { role: nextRole } : {}),
             ...(account?.provider !== "credentials" ? { emailVerified: new Date() } : {})
           }
         });

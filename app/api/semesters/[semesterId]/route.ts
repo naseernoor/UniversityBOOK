@@ -82,6 +82,13 @@ export async function PUT(request: Request, { params }: Params) {
         index: parsed.data.index,
         name: parsed.data.name ?? null,
         status: parsed.data.status,
+        verificationStatus: "NOT_REQUESTED",
+        verificationDocumentUrl: null,
+        verificationDocumentName: null,
+        verificationRequestedAt: null,
+        verificationReviewedAt: null,
+        verificationReviewNote: null,
+        verificationReviewedById: null,
         subjects: {
           deleteMany: {},
           create: parsed.data.subjects.map((subject) => ({

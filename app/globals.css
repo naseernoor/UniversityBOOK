@@ -6,6 +6,9 @@
 @import "@fontsource/vazirmatn/700.css";
 @import "@fontsource/amiri/400.css";
 @import "@fontsource/amiri/700.css";
+@import "@fontsource/cairo/400.css";
+@import "@fontsource/cairo/600.css";
+@import "@fontsource/cairo/700.css";
 
 :root {
   color-scheme: light;
@@ -76,9 +79,14 @@ h6 {
 }
 
 .font-persian {
-  font-family: "Vazirmatn", "Amiri", "Noto Naskh Arabic", "Tahoma", sans-serif;
+  font-family: "Cairo", "Vazirmatn", "Amiri", "Noto Naskh Arabic", "Tahoma", sans-serif;
 }
 
 .font-pashto {
-  font-family: "Amiri", "Vazirmatn", "Noto Naskh Arabic", "Tahoma", sans-serif;
+  font-family: "Cairo", "Amiri", "Vazirmatn", "Noto Naskh Arabic", "Tahoma", sans-serif;
+}
+
+.font-transcript {
+  font-family: "Cairo", "Vazirmatn", "Amiri", "Noto Naskh Arabic", "Tahoma", sans-serif;
+  letter-spacing: 0.01em;
 }

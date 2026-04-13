@@ -10,6 +10,9 @@ type PostVisibility = "FRIENDS" | "PUBLIC";
 type PostReaction = "LIKE" | "LOVE" | "HAHA" | "WOW" | "SAD" | "ANGRY";
 type ProfileVisibility = "PUBLIC" | "FRIENDS" | "PRIVATE";
 type TwoFactorMethod = "EMAIL" | "PHONE";
+type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN";
+type VerificationStatus = "NOT_REQUESTED" | "PENDING" | "APPROVED" | "REJECTED";
+type IdentityDocumentType = "ID_CARD" | "PASSPORT" | "OTHER";
 
 type LectureMaterial = {
   name: string;
@@ -32,6 +35,12 @@ type Semester = {
   index: number;
   name: string | null;
   status: SemesterStatus;
+  verificationStatus: VerificationStatus;
+  verificationDocumentUrl?: string | null;
+  verificationDocumentName?: string | null;
+  verificationRequestedAt?: string | null;
+  verificationReviewedAt?: string | null;
+  verificationReviewNote?: string | null;
   percentage: number;
   visibleFriendIds: string[];
   subjects: Subject[];
@@ -84,6 +93,8 @@ type UserPayload = {
   email: string | null;
   username: string | null;
   image: string | null;
+  role: UserRole;
+  isBlueVerified: boolean;
   profile: Profile | null;
 };
 
@@ -101,19 +112,40 @@ type Friend = {
 
 type PostComment = {
   id: string;
+  postId: string;
+  parentCommentId: string | null;
   content: string;
   createdAt: string;
   updatedAt: string;
+  mentions: Array<{
+    id: string;
+    username: string | null;
+    email: string | null;
+  }>;
   user: {
     id: string;
     username: string | null;
     email: string | null;
     image: string | null;
+    role: UserRole;
+    isBlueVerified: boolean;
     profile: {
       firstName: string;
       lastName: string;
     } | null;
   };
+  myReaction: PostReaction | null;
+  reactionsCount: number;
+  reactions: Record<PostReaction, number>;
+  replies: PostComment[];
+};
+
+type PostMedia = {
+  id: string;
+  url: string;
+  fileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
 };
 
 type Post = {
@@ -130,6 +162,8 @@ type Post = {
     username: string | null;
     email: string | null;
     image: string | null;
+    role: UserRole;
+    isBlueVerified: boolean;
     profile: {
       firstName: string;
       lastName: string;
@@ -142,11 +176,22 @@ type Post = {
   reactions: Record<PostReaction, number>;
   commentsCount: number;
   comments: PostComment[];
+  media: PostMedia[];
+  mentions: Array<{
+    id: string;
+    username: string | null;
+    email: string | null;
+    profile: {
+      firstName: string;
+      lastName: string;
+    } | null;
+  }>;
   sharedSemesters: Array<{
     id: string;
     index: number;
     name: string | null;
     status: SemesterStatus;
+    verificationStatus: VerificationStatus;
     percentage: number;
     subjects: Array<{
       id: string;
@@ -248,6 +293,54 @@ const formatDateTime = (value: string) =>
     minute: "2-digit"
   });
 
+const mentionPartRegex = /(@[\p{L}\p{N}_.-]{3,30})/gu;
+
+const renderContentWithMentions = (value: string) =>
+  value.split(mentionPartRegex).map((part, index) =>
+    part.startsWith("@") ? (
+      <span key={`${part}-${index}`} className="font-semibold text-sky-700">
+        {part}
+      </span>
+    ) : (
+      <span key={`${part}-${index}`}>{part}</span>
+    )
+  );
+
+const getPersonDisplayName = (params: {
+  username: string | null;
+  email: string | null;
+  name?: string | null;
+  profile?: {
+    firstName: string;
+    lastName: string;
+  } | null;
+}) => {
+  if (params.profile) {
+    return `${params.profile.firstName} ${params.profile.lastName}`;
+  }
+  return params.username ?? params.email ?? params.name ?? "User";
+};
+
+const updateCommentTree = (
+  comments: PostComment[],
+  commentId: string,
+  updater: (comment: PostComment) => PostComment
+): PostComment[] =>
+  comments.map((comment) => {
+    if (comment.id === commentId) {
+      return updater(comment);
+    }
+
+    if (comment.replies.length === 0) {
+      return comment;
+    }
+
+    return {
+      ...comment,
+      replies: updateCommentTree(comment.replies, commentId, updater)
+    };
+  });
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -319,6 +412,20 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
   const [uploadingLectureKey, setUploadingLectureKey] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const [postingCommentId, setPostingCommentId] = useState<string | null>(null);
+  const [savingPostId, setSavingPostId] = useState<string | null>(null);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [uploadingPostMedia, setUploadingPostMedia] = useState(false);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingPostContent, setEditingPostContent] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentContent, setEditingCommentContent] = useState("");
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const [commentReactingId, setCommentReactingId] = useState<string | null>(null);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [semesterVerificationUploadingId, setSemesterVerificationUploadingId] = useState<string | null>(null);
+  const [semesterVerificationReviewingId, setSemesterVerificationReviewingId] = useState<string | null>(null);
+  const [profileVerificationUploading, setProfileVerificationUploading] = useState(false);
+  const [profileVerificationSubmitting, setProfileVerificationSubmitting] = useState(false);
   const [generatingTranscript, setGeneratingTranscript] = useState(false);
   const [importingExcel, setImportingExcel] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
@@ -344,10 +451,29 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     content: "",
     visibility: "FRIENDS" as PostVisibility,
     includeOverallPercentage: false,
-    sharedSemesterIds: [] as string[]
+    sharedSemesterIds: [] as string[],
+    media: [] as PostMedia[]
   });
 
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [profileVerificationForm, setProfileVerificationForm] = useState({
+    documentType: "ID_CARD" as IdentityDocumentType,
+    documentUrl: "",
+    documentName: ""
+  });
+  const [profileVerificationRequests, setProfileVerificationRequests] = useState<
+    Array<{
+      id: string;
+      status: "PENDING" | "APPROVED" | "REJECTED";
+      documentType: IdentityDocumentType;
+      documentUrl: string;
+      documentName: string | null;
+      reviewNote: string | null;
+      reviewedAt: string | null;
+      createdAt: string;
+    }>
+  >([]);
 
   const [transcriptOptions, setTranscriptOptions] = useState<TranscriptOptions>({
     showFatherName: true,
@@ -391,19 +517,38 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
 
   const availableSemesterCount = Math.max(totalSemesters - usedSemesterIndexes.size, 0);
 
+  const mentionableUsernames = useMemo(() => {
+    const all = [
+      user.username,
+      ...friends.map((friend) => friend.username ?? null)
+    ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+    return [...new Set(all)];
+  }, [friends, user.username]);
+
+  const isCurrentUserAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    const [profileRes, semestersRes, friendsRes, postsRes, securityRes] = await Promise.all([
+    const [profileRes, semestersRes, friendsRes, postsRes, securityRes, verificationRes] = await Promise.all([
       fetch("/api/profile"),
       fetch("/api/semesters"),
       fetch("/api/friends/list"),
       fetch("/api/posts"),
-      fetch("/api/security/settings")
+      fetch("/api/security/settings"),
+      fetch("/api/verification/profile")
     ]);
 
-    if (!profileRes.ok || !semestersRes.ok || !friendsRes.ok || !postsRes.ok || !securityRes.ok) {
+    if (
+      !profileRes.ok ||
+      !semestersRes.ok ||
+      !friendsRes.ok ||
+      !postsRes.ok ||
+      !securityRes.ok ||
+      !verificationRes.ok
+    ) {
       setLoading(false);
       setError("Failed to load dashboard data");
       return;
@@ -422,6 +567,18 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     const friendsData = (await friendsRes.json()) as { friends: Friend[] };
     const postsData = (await postsRes.json()) as { posts: Post[] };
     const securityData = (await securityRes.json()) as { settings: SecuritySettings };
+    const verificationData = (await verificationRes.json()) as {
+      requests: Array<{
+        id: string;
+        status: "PENDING" | "APPROVED" | "REJECTED";
+        documentType: IdentityDocumentType;
+        documentUrl: string;
+        documentName: string | null;
+        reviewNote: string | null;
+        reviewedAt: string | null;
+        createdAt: string;
+      }>;
+    };
 
     setUser(profileData.user);
     setSemesters(semestersData.semesters);
@@ -432,6 +589,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     setFriends(friendsData.friends);
     setPosts(postsData.posts);
     setPendingEmail(securityData.settings.pendingEmail ?? null);
+    setProfileVerificationRequests(verificationData.requests);
 
     const finishedCount =
       typeof semestersData.completedSemesters === "number"
@@ -462,7 +620,8 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       visibility: securityData.settings.defaultPostVisibility,
       sharedSemesterIds: previous.sharedSemesterIds.filter((id) =>
         semestersData.semesters.some((semester) => semester.id === id)
-      )
+      ),
+      media: previous.media.filter((media) => media.url.length > 0)
     }));
 
     setSecurityForm({
@@ -1107,6 +1266,70 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     }));
   };
 
+  const replacePostInState = (post: Post) => {
+    setPosts((previous) => previous.map((item) => (item.id === post.id ? post : item)));
+  };
+
+  const uploadPostFile = async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    setUploadingPostMedia(true);
+    clearNotifications();
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/uploads/post", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+        media?: {
+          url: string;
+          fileName: string | null;
+          mimeType: string | null;
+          sizeBytes: number | null;
+        };
+      };
+
+      if (!response.ok || !data.media) {
+        setError(data.error ?? "Failed to upload media");
+        return;
+      }
+
+      const media: PostMedia = {
+        id: `new-${Date.now()}`,
+        url: data.media.url,
+        fileName: data.media.fileName ?? null,
+        mimeType: data.media.mimeType ?? null,
+        sizeBytes: typeof data.media.sizeBytes === "number" ? data.media.sizeBytes : null
+      };
+
+      setPostForm((previous) => ({
+        ...previous,
+        media: [...previous.media, media]
+      }));
+      setMessage("Media uploaded");
+    } catch (requestError) {
+      console.error("Post media upload failed", requestError);
+      setError("Failed to upload media");
+    } finally {
+      setUploadingPostMedia(false);
+    }
+  };
+
+  const removePostMedia = (mediaId: string) => {
+    setPostForm((previous) => ({
+      ...previous,
+      media: previous.media.filter((media) => media.id !== mediaId)
+    }));
+  };
+
   const createPost = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPosting(true);
@@ -1116,7 +1339,13 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       content: postForm.content,
       visibility: postForm.visibility,
       includeOverallPercentage: postForm.includeOverallPercentage,
-      sharedSemesterIds: postForm.sharedSemesterIds
+      sharedSemesterIds: postForm.sharedSemesterIds,
+      media: postForm.media.map((media) => ({
+        url: media.url,
+        fileName: media.fileName,
+        mimeType: media.mimeType,
+        sizeBytes: media.sizeBytes
+      }))
     };
 
     const response = await fetch("/api/posts", {
@@ -1137,13 +1366,85 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
 
     setPostForm({
       content: "",
-      visibility: "FRIENDS",
+      visibility: securityForm.defaultPostVisibility,
       includeOverallPercentage: false,
-      sharedSemesterIds: []
+      sharedSemesterIds: [],
+      media: []
     });
 
     setPosts((previous) => [data.post as Post, ...previous]);
     setMessage("Post published");
+  };
+
+  const startEditPost = (post: Post) => {
+    setEditingPostId(post.id);
+    setEditingPostContent(post.content);
+  };
+
+  const cancelEditPost = () => {
+    setEditingPostId(null);
+    setEditingPostContent("");
+  };
+
+  const saveEditedPost = async (post: Post) => {
+    setSavingPostId(post.id);
+    clearNotifications();
+
+    const response = await fetch(`/api/posts/${post.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        content: editingPostContent,
+        visibility: post.visibility,
+        includeOverallPercentage: post.includeOverallPercentage,
+        sharedSemesterIds: post.sharedSemesters.map((semester) => semester.id),
+        media: post.media.map((media) => ({
+          url: media.url,
+          fileName: media.fileName,
+          mimeType: media.mimeType,
+          sizeBytes: media.sizeBytes
+        }))
+      })
+    });
+
+    const data = (await response.json()) as { error?: string; post?: Post };
+    setSavingPostId(null);
+
+    if (!response.ok || !data.post) {
+      setError(data.error ?? "Failed to update post");
+      return;
+    }
+
+    replacePostInState(data.post);
+    setEditingPostId(null);
+    setEditingPostContent("");
+    setMessage("Post updated");
+  };
+
+  const deletePost = async (postId: string) => {
+    const shouldDelete = window.confirm("Delete this post?");
+    if (!shouldDelete) {
+      return;
+    }
+
+    setDeletingPostId(postId);
+    clearNotifications();
+
+    const response = await fetch(`/api/posts/${postId}`, {
+      method: "DELETE"
+    });
+    const data = (await response.json()) as { error?: string; message?: string };
+    setDeletingPostId(null);
+
+    if (!response.ok) {
+      setError(data.error ?? "Failed to delete post");
+      return;
+    }
+
+    setPosts((previous) => previous.filter((post) => post.id !== postId));
+    setMessage(data.message ?? "Post deleted");
   };
 
   const setReaction = async (postId: string, reaction: PostReaction | "NONE") => {
@@ -1210,15 +1511,11 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       body: JSON.stringify({ content })
     });
 
-    const data = (await response.json()) as {
-      error?: string;
-      comment?: PostComment;
-      commentsCount?: number;
-    };
+    const data = (await response.json()) as { error?: string; post?: Post };
 
     setPostingCommentId(null);
 
-    if (!response.ok || !data.comment || typeof data.commentsCount !== "number") {
+    if (!response.ok || !data.post) {
       setError(data.error ?? "Failed to add comment");
       return;
     }
@@ -1228,17 +1525,315 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       [postId]: ""
     }));
 
+    replacePostInState(data.post);
+  };
+
+  const addReply = async (postId: string, parentCommentId: string) => {
+    const content = (replyDrafts[parentCommentId] ?? "").trim();
+    if (content.length === 0) {
+      setError("Reply cannot be empty");
+      return;
+    }
+
+    setPostingCommentId(parentCommentId);
+    clearNotifications();
+
+    const response = await fetch(`/api/posts/${postId}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ content, parentCommentId })
+    });
+
+    const data = (await response.json()) as { error?: string; post?: Post };
+    setPostingCommentId(null);
+
+    if (!response.ok || !data.post) {
+      setError(data.error ?? "Failed to add reply");
+      return;
+    }
+
+    setReplyDrafts((previous) => ({
+      ...previous,
+      [parentCommentId]: ""
+    }));
+    setReplyingToCommentId(null);
+    replacePostInState(data.post);
+  };
+
+  const beginEditComment = (comment: PostComment) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentContent(comment.content);
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentContent("");
+  };
+
+  const saveEditedComment = async (postId: string, commentId: string) => {
+    setSavingPostId(commentId);
+    clearNotifications();
+
+    const response = await fetch(`/api/posts/${postId}/comments/${commentId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ content: editingCommentContent })
+    });
+
+    const data = (await response.json()) as { error?: string; post?: Post };
+    setSavingPostId(null);
+
+    if (!response.ok || !data.post) {
+      setError(data.error ?? "Failed to update comment");
+      return;
+    }
+
+    setEditingCommentId(null);
+    setEditingCommentContent("");
+    replacePostInState(data.post);
+    setMessage("Comment updated");
+  };
+
+  const deleteComment = async (postId: string, commentId: string) => {
+    const shouldDelete = window.confirm("Delete this comment?");
+    if (!shouldDelete) {
+      return;
+    }
+
+    setDeletingCommentId(commentId);
+    clearNotifications();
+
+    const response = await fetch(`/api/posts/${postId}/comments/${commentId}`, {
+      method: "DELETE"
+    });
+    const data = (await response.json()) as { error?: string; post?: Post };
+    setDeletingCommentId(null);
+
+    if (!response.ok || !data.post) {
+      setError(data.error ?? "Failed to delete comment");
+      return;
+    }
+
+    replacePostInState(data.post);
+    setMessage("Comment deleted");
+  };
+
+  const reactToComment = async (
+    postId: string,
+    commentId: string,
+    reaction: PostReaction | "NONE"
+  ) => {
+    setCommentReactingId(commentId);
+    clearNotifications();
+
+    const response = await fetch(`/api/posts/${postId}/comments/${commentId}/react`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ reaction })
+    });
+    const data = (await response.json()) as {
+      error?: string;
+      myReaction?: PostReaction | null;
+      reactionsCount?: number;
+      reactions?: Partial<Record<PostReaction, number>>;
+    };
+    setCommentReactingId(null);
+
+    if (!response.ok || typeof data.reactionsCount !== "number") {
+      setError(data.error ?? "Failed to react to comment");
+      return;
+    }
+
     setPosts((previous) =>
       previous.map((post) =>
-        post.id === postId
-          ? {
+        post.id !== postId
+          ? post
+          : {
               ...post,
-              comments: [...post.comments, data.comment as PostComment],
-              commentsCount: data.commentsCount ?? post.commentsCount
+              comments: updateCommentTree(post.comments, commentId, (comment) => ({
+                ...comment,
+                myReaction: data.myReaction ?? null,
+                reactionsCount: data.reactionsCount ?? comment.reactionsCount,
+                reactions: {
+                  LIKE: data.reactions?.LIKE ?? 0,
+                  LOVE: data.reactions?.LOVE ?? 0,
+                  HAHA: data.reactions?.HAHA ?? 0,
+                  WOW: data.reactions?.WOW ?? 0,
+                  SAD: data.reactions?.SAD ?? 0,
+                  ANGRY: data.reactions?.ANGRY ?? 0
+                }
+              }))
             }
-          : post
       )
     );
+  };
+
+  const uploadVerificationDocument = async (file: File | null) => {
+    if (!file) {
+      return null;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch("/api/uploads/document", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = (await response.json()) as {
+      error?: string;
+      document?: {
+        url: string;
+        fileName: string | null;
+      };
+    };
+
+    if (!response.ok || !data.document) {
+      throw new Error(data.error ?? "Failed to upload document");
+    }
+
+    return data.document;
+  };
+
+  const handleProfileVerificationFile = async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    setProfileVerificationUploading(true);
+    clearNotifications();
+
+    try {
+      const document = await uploadVerificationDocument(file);
+      if (!document) {
+        setError("No document uploaded");
+        return;
+      }
+
+      setProfileVerificationForm((previous) => ({
+        ...previous,
+        documentUrl: document.url,
+        documentName: document.fileName ?? ""
+      }));
+      setMessage("Verification document uploaded");
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Failed to upload document");
+    } finally {
+      setProfileVerificationUploading(false);
+    }
+  };
+
+  const submitProfileVerification = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!profileVerificationForm.documentUrl) {
+      setError("Upload ID or passport before submitting verification request");
+      return;
+    }
+
+    setProfileVerificationSubmitting(true);
+    clearNotifications();
+
+    const response = await fetch("/api/verification/profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(profileVerificationForm)
+    });
+
+    const data = (await response.json()) as { error?: string; message?: string };
+    setProfileVerificationSubmitting(false);
+
+    if (!response.ok) {
+      setError(data.error ?? "Failed to submit verification request");
+      return;
+    }
+
+    setProfileVerificationForm({
+      documentType: "ID_CARD",
+      documentUrl: "",
+      documentName: ""
+    });
+    setMessage(data.message ?? "Verification request submitted");
+    await loadData();
+  };
+
+  const requestSemesterVerification = async (semesterId: string, file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    setSemesterVerificationUploadingId(semesterId);
+    clearNotifications();
+
+    try {
+      const document = await uploadVerificationDocument(file);
+      if (!document) {
+        setError("No document uploaded");
+        return;
+      }
+
+      const response = await fetch(`/api/semesters/${semesterId}/verification`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          semesterId,
+          documentUrl: document.url,
+          documentName: document.fileName ?? ""
+        })
+      });
+
+      const data = (await response.json()) as { error?: string; message?: string };
+
+      if (!response.ok) {
+        setError(data.error ?? "Failed to submit semester verification");
+        return;
+      }
+
+      setMessage(data.message ?? "Semester verification requested");
+      await loadData();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error ? requestError.message : "Failed to submit semester verification"
+      );
+    } finally {
+      setSemesterVerificationUploadingId(null);
+    }
+  };
+
+  const reviewSemesterVerification = async (
+    semesterId: string,
+    action: "APPROVE" | "REJECT"
+  ) => {
+    setSemesterVerificationReviewingId(semesterId);
+    clearNotifications();
+
+    const response = await fetch(`/api/semesters/${semesterId}/verification`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ action })
+    });
+    const data = (await response.json()) as { error?: string; message?: string };
+    setSemesterVerificationReviewingId(null);
+
+    if (!response.ok) {
+      setError(data.error ?? "Failed to review semester");
+      return;
+    }
+
+    setMessage(data.message ?? "Semester verification updated");
+    await loadData();
   };
 
   const downloadTranscriptPdf = async () => {
@@ -1352,14 +1947,14 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
         .join("");
 
       const container = document.createElement("div");
-      container.className = "font-persian";
+      container.className = "font-transcript";
       container.style.padding = "20px";
       container.style.background = "#ffffff";
       container.style.color = "#13211d";
       container.style.width = "794px";
       container.style.margin = "0 auto";
       container.innerHTML = `
-        <div style="font-family: Vazirmatn, Amiri, Tahoma, sans-serif;">
+        <div style="font-family: Cairo, Vazirmatn, Amiri, Tahoma, sans-serif;">
           <header style="background:linear-gradient(135deg,#0f5a49,#1f7a64);padding:18px;border-radius:14px;color:#fff;">
             <h1 style="margin:0;font-size:24px;">Official Academic Transcript</h1>
             <p style="margin:8px 0 0 0;font-size:13px;">UniBOOK - Student Report</p>
@@ -1399,6 +1994,170 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     } finally {
       setGeneratingTranscript(false);
     }
+  };
+
+  const renderPostMedia = (media: PostMedia) => {
+    if (media.mimeType?.startsWith("video/")) {
+      return (
+        <video key={media.id} controls className="max-h-72 w-full rounded-xl border border-brand-200 bg-black/90">
+          <source src={media.url} type={media.mimeType ?? undefined} />
+          Your browser does not support video playback.
+        </video>
+      );
+    }
+
+    return (
+      <Image
+        key={media.id}
+        src={media.url}
+        alt={media.fileName ?? "Post media"}
+        width={1200}
+        height={700}
+        className="max-h-72 w-full rounded-xl border border-brand-200 object-cover"
+      />
+    );
+  };
+
+  const renderComment = (post: Post, comment: PostComment, depth = 0): React.ReactNode => {
+    const canEdit = comment.user.id === user.id;
+    const canDelete = canEdit || isCurrentUserAdmin;
+    const isReplying = replyingToCommentId === comment.id;
+    const isEditing = editingCommentId === comment.id;
+
+    return (
+      <div
+        key={comment.id}
+        className={`rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 ${depth > 0 ? "mt-2" : ""}`}
+        style={{ marginLeft: `${Math.min(depth, 2) * 18}px` }}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-brand-800">
+            {getPersonDisplayName({
+              username: comment.user.username,
+              email: comment.user.email,
+              profile: comment.user.profile
+            })}
+            {comment.user.isBlueVerified ? (
+              <span className="ml-2 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] text-sky-700">Verified</span>
+            ) : null}
+            <span className="ml-2 font-normal text-brand-600">{formatDateTime(comment.createdAt)}</span>
+          </p>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="text-xs text-brand-700" onClick={() => setReplyingToCommentId(comment.id)}>
+              Reply
+            </button>
+            {canEdit ? (
+              <button type="button" className="text-xs text-brand-700" onClick={() => beginEditComment(comment)}>
+                Edit
+              </button>
+            ) : null}
+            {canDelete ? (
+              <button
+                type="button"
+                className="text-xs text-red-700"
+                disabled={deletingCommentId === comment.id}
+                onClick={() => void deleteComment(post.id, comment.id)}
+              >
+                {deletingCommentId === comment.id ? "Deleting..." : "Delete"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {isEditing ? (
+          <div className="mt-2 space-y-2">
+            <textarea
+              className="input font-pashto min-h-20"
+              dir="auto"
+              value={editingCommentContent}
+              onChange={(event) => setEditingCommentContent(event.target.value)}
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={savingPostId === comment.id}
+                onClick={() => void saveEditedComment(post.id, comment.id)}
+              >
+                {savingPostId === comment.id ? "Saving..." : "Save"}
+              </button>
+              <button type="button" className="btn-secondary" onClick={cancelEditComment}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="font-pashto mt-1 whitespace-pre-wrap text-sm text-brand-900" dir="auto">
+            {renderContentWithMentions(comment.content)}
+          </p>
+        )}
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {REACTION_OPTIONS.map((reaction) => {
+            const active = comment.myReaction === reaction.type;
+            const count = comment.reactions[reaction.type] ?? 0;
+
+            return (
+              <button
+                key={`${comment.id}-${reaction.type}`}
+                type="button"
+                className={`rounded-full border px-2 py-0.5 text-xs transition ${
+                  active
+                    ? "border-brand-500 bg-brand-100 text-brand-900"
+                    : "border-brand-200 bg-white text-brand-700 hover:bg-brand-50"
+                }`}
+                disabled={commentReactingId === comment.id}
+                onClick={() => void reactToComment(post.id, comment.id, active ? "NONE" : reaction.type)}
+                title={reaction.label}
+              >
+                {reaction.emoji} {count}
+              </button>
+            );
+          })}
+          <span className="text-xs text-brand-700">Total: {comment.reactionsCount}</span>
+        </div>
+
+        {isReplying ? (
+          <div className="mt-2 flex gap-2">
+            <input
+              className="input font-pashto"
+              placeholder="Write a reply..."
+              dir="auto"
+              list={`mention-list-${post.id}`}
+              value={replyDrafts[comment.id] ?? ""}
+              onChange={(event) =>
+                setReplyDrafts((previous) => ({
+                  ...previous,
+                  [comment.id]: event.target.value
+                }))
+              }
+            />
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={postingCommentId === comment.id}
+              onClick={() => void addReply(post.id, comment.id)}
+            >
+              {postingCommentId === comment.id ? "Posting..." : "Reply"}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setReplyingToCommentId(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
+
+        {comment.replies.length > 0 ? (
+          <div className="mt-2 space-y-2">
+            {comment.replies.map((reply) => renderComment(post, reply, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const renderSubjectDraftCard = (
@@ -1556,7 +2315,10 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
             />
             <div>
               <p className="text-sm font-semibold text-white">@{user.username ?? "student"}</p>
-              <p className="text-xs text-brand-100">{user.email ?? "No email"}</p>
+              <p className="text-xs text-brand-100">
+                {user.email ?? "No email"} · {user.role}
+                {user.isBlueVerified ? " · Blue Verified" : ""}
+              </p>
             </div>
           </div>
         </div>
@@ -1621,6 +2383,11 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                   placeholder="Share an update, question, or summary..."
                 />
               </Field>
+              {mentionableUsernames.length > 0 ? (
+                <p className="text-xs text-brand-700">
+                  Mention friends with <code>@username</code>, for example: {mentionableUsernames.slice(0, 4).map((name) => `@${name}`).join(", ")}
+                </p>
+              ) : null}
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Visibility" required>
@@ -1652,6 +2419,59 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                   />
                   Include overall percentage snapshot
                 </label>
+              </div>
+
+              <div className="rounded-xl border border-brand-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-brand-900">Post media</p>
+                  <label className="btn-secondary cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*,video/mp4,video/webm"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        void uploadPostFile(file);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                    {uploadingPostMedia ? "Uploading..." : "Upload image/video"}
+                  </label>
+                </div>
+
+                {postForm.media.length === 0 ? (
+                  <p className="mt-2 text-sm text-brand-700">No media attached yet.</p>
+                ) : (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {postForm.media.map((media) => (
+                      <div key={media.id} className="rounded-xl border border-brand-200 bg-brand-50 p-2">
+                        {media.mimeType?.startsWith("video/") ? (
+                          <video controls className="h-40 w-full rounded-lg object-cover">
+                            <source src={media.url} type={media.mimeType ?? undefined} />
+                          </video>
+                        ) : (
+                          <Image
+                            src={media.url}
+                            alt={media.fileName ?? "Media"}
+                            width={640}
+                            height={360}
+                            className="h-40 w-full rounded-lg object-cover"
+                          />
+                        )}
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <p className="truncate text-xs text-brand-700">{media.fileName ?? "Attachment"}</p>
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-red-700"
+                            onClick={() => removePostMedia(media.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="rounded-xl border border-brand-200 bg-white p-3">
@@ -1708,21 +2528,74 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                       />
                       <div>
                         <p className="font-semibold text-brand-950">
-                          {post.author.profile
-                            ? `${post.author.profile.firstName} ${post.author.profile.lastName}`
-                            : post.author.username ?? post.author.email ?? post.author.name ?? "Student"}
+                          {getPersonDisplayName({
+                            username: post.author.username,
+                            email: post.author.email,
+                            name: post.author.name,
+                            profile: post.author.profile
+                          })}
+                          {post.author.isBlueVerified ? (
+                            <span className="ml-2 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] text-sky-700">Verified</span>
+                          ) : null}
                         </p>
                         <p className="text-xs text-brand-700">
                           @{post.author.username ?? "user"} · {formatDateTime(post.createdAt)} · {post.visibility}
                         </p>
                       </div>
                     </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {post.author.id === user.id ? (
+                        <>
+                          {editingPostId === post.id ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={savingPostId === post.id}
+                                onClick={() => void saveEditedPost(post)}
+                              >
+                                {savingPostId === post.id ? "Saving..." : "Save"}
+                              </button>
+                              <button type="button" className="btn-secondary" onClick={cancelEditPost}>
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button type="button" className="btn-secondary" onClick={() => startEditPost(post)}>
+                              Edit
+                            </button>
+                          )}
+                        </>
+                      ) : null}
+                      {post.author.id === user.id || isCurrentUserAdmin ? (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={deletingPostId === post.id}
+                          onClick={() => void deletePost(post.id)}
+                        >
+                          {deletingPostId === post.id ? "Deleting..." : "Delete"}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
 
-                  {post.content.trim().length > 0 ? (
+                  {editingPostId === post.id ? (
+                    <textarea
+                      className="input font-pashto min-h-24"
+                      dir="auto"
+                      value={editingPostContent}
+                      onChange={(event) => setEditingPostContent(event.target.value)}
+                    />
+                  ) : post.content.trim().length > 0 ? (
                     <p className="font-pashto whitespace-pre-wrap text-sm text-brand-900" dir="auto">
-                      {post.content}
+                      {renderContentWithMentions(post.content)}
                     </p>
+                  ) : null}
+
+                  {post.media.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">{post.media.map((media) => renderPostMedia(media))}</div>
                   ) : null}
 
                   {post.includeOverallPercentage && typeof post.overallPercentageSnapshot === "number" ? (
@@ -1744,6 +2617,17 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                             <div className="flex items-center gap-2">
                               <span className={`badge ${semester.status === "FINISHED" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-700"}`}>
                                 {semester.status}
+                              </span>
+                              <span
+                                className={`badge ${
+                                  semester.verificationStatus === "APPROVED"
+                                    ? "border-sky-300 bg-sky-50 text-sky-700"
+                                    : semester.verificationStatus === "PENDING"
+                                      ? "border-amber-300 bg-amber-50 text-amber-700"
+                                      : "border-brand-300 bg-brand-50 text-brand-700"
+                                }`}
+                              >
+                                Verify: {semester.verificationStatus}
                               </span>
                               <span className="text-xs font-semibold text-brand-700">{semester.percentage.toFixed(2)}%</span>
                             </div>
@@ -1806,26 +2690,21 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                     {post.comments.length === 0 ? (
                       <p className="text-sm text-brand-700">No comments yet.</p>
                     ) : (
-                      post.comments.map((comment) => (
-                        <div key={comment.id} className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2">
-                          <p className="text-xs font-semibold text-brand-800">
-                            {comment.user.profile
-                              ? `${comment.user.profile.firstName} ${comment.user.profile.lastName}`
-                              : comment.user.username ?? comment.user.email ?? "User"}
-                            <span className="ml-2 font-normal text-brand-600">{formatDateTime(comment.createdAt)}</span>
-                          </p>
-                          <p className="font-pashto mt-1 text-sm text-brand-900" dir="auto">
-                            {comment.content}
-                          </p>
-                        </div>
-                      ))
+                      post.comments.map((comment) => renderComment(post, comment))
                     )}
+
+                    <datalist id={`mention-list-${post.id}`}>
+                      {mentionableUsernames.map((username) => (
+                        <option key={`${post.id}-${username}`} value={`@${username}`} />
+                      ))}
+                    </datalist>
 
                     <div className="flex gap-2">
                       <input
                         className="input font-pashto"
                         placeholder="Write a comment..."
                         dir="auto"
+                        list={`mention-list-${post.id}`}
                         value={commentDrafts[post.id] ?? ""}
                         onChange={(event) =>
                           setCommentDrafts((previous) => ({
@@ -2102,6 +2981,87 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                   subtitle={projection ? `${projection.remainingSemesters} semesters left` : "Add ideal percentage"}
                 />
               </div>
+            </article>
+
+            <article className="panel space-y-3">
+              <h3 className="text-lg font-bold text-brand-950">Blue Badge Verification</h3>
+              <p className="text-sm text-brand-700">
+                Submit your ID or passport. Admin approval adds a blue verified badge to your profile.
+              </p>
+              <p className="text-xs text-brand-700">
+                Current status:{" "}
+                <span
+                  className={`font-semibold ${
+                    user.isBlueVerified ? "text-sky-700" : "text-brand-800"
+                  }`}
+                >
+                  {user.isBlueVerified ? "Verified" : "Not verified"}
+                </span>
+              </p>
+
+              <form className="space-y-3" onSubmit={submitProfileVerification}>
+                <Field label="Document Type" required>
+                  <select
+                    className="input"
+                    value={profileVerificationForm.documentType}
+                    onChange={(event) =>
+                      setProfileVerificationForm((previous) => ({
+                        ...previous,
+                        documentType: event.target.value as IdentityDocumentType
+                      }))
+                    }
+                  >
+                    <option value="ID_CARD">ID Card</option>
+                    <option value="PASSPORT">Passport</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                </Field>
+
+                <div className="flex flex-wrap gap-2">
+                  <label className="btn-secondary cursor-pointer">
+                    <input
+                      type="file"
+                      accept="application/pdf,image/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        void handleProfileVerificationFile(file);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                    {profileVerificationUploading ? "Uploading..." : "Upload ID/Passport"}
+                  </label>
+                  {profileVerificationForm.documentUrl ? (
+                    <a
+                      href={profileVerificationForm.documentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-secondary"
+                    >
+                      Open uploaded file
+                    </a>
+                  ) : null}
+                </div>
+
+                <button type="submit" className="btn-primary w-full" disabled={profileVerificationSubmitting}>
+                  {profileVerificationSubmitting ? "Submitting..." : "Submit verification request"}
+                </button>
+              </form>
+
+              {profileVerificationRequests.length > 0 ? (
+                <div className="space-y-2 rounded-xl border border-brand-200 bg-brand-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Recent Requests</p>
+                  {profileVerificationRequests.slice(0, 4).map((request) => (
+                    <div key={request.id} className="rounded-lg border border-brand-200 bg-white px-3 py-2 text-xs">
+                      <p className="font-semibold text-brand-900">
+                        {request.documentType} · {request.status}
+                      </p>
+                      <p className="text-brand-700">{formatDateTime(request.createdAt)}</p>
+                      {request.reviewNote ? <p className="text-brand-700">Note: {request.reviewNote}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </article>
 
             <article className="panel space-y-3">
@@ -2516,6 +3476,69 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                             {deletingSemesterId === semester.id ? "Deleting..." : "Delete"}
                           </button>
                         </div>
+                      </div>
+
+                      <div className="rounded-xl border border-brand-200 bg-brand-50 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-brand-900">
+                              Marks Verification: {semester.verificationStatus}
+                            </p>
+                            <p className="text-xs text-brand-700">
+                              Upload your official transcript image/PDF and request admin approval.
+                            </p>
+                          </div>
+                          {semester.verificationDocumentUrl ? (
+                            <a
+                              href={semester.verificationDocumentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn-secondary"
+                            >
+                              Open submitted document
+                            </a>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <label className="btn-secondary cursor-pointer">
+                            <input
+                              type="file"
+                              accept="application/pdf,image/*"
+                              className="hidden"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0] ?? null;
+                                void requestSemesterVerification(semester.id, file);
+                                event.currentTarget.value = "";
+                              }}
+                            />
+                            {semesterVerificationUploadingId === semester.id
+                              ? "Uploading..."
+                              : "Upload transcript"}
+                          </label>
+                          {isCurrentUserAdmin ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={semesterVerificationReviewingId === semester.id}
+                                onClick={() => void reviewSemesterVerification(semester.id, "APPROVE")}
+                              >
+                                {semesterVerificationReviewingId === semester.id ? "Saving..." : "Approve"}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                disabled={semesterVerificationReviewingId === semester.id}
+                                onClick={() => void reviewSemesterVerification(semester.id, "REJECT")}
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                        {semester.verificationReviewNote ? (
+                          <p className="mt-2 text-xs text-brand-700">Admin note: {semester.verificationReviewNote}</p>
+                        ) : null}
                       </div>
 
                       <div className="mt-2 overflow-hidden rounded-xl border border-brand-200">

@@ -49,6 +49,31 @@ enum PostReactionType {
   ANGRY
 }
 
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum VerificationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum IdentityDocumentType {
+  ID_CARD
+  PASSPORT
+  OTHER
+}
+
+enum SemesterVerificationStatus {
+  NOT_REQUESTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -57,6 +82,10 @@ model User {
   emailVerified DateTime?
   pendingEmail  String?
   image         String?
+  role          UserRole  @default(USER)
+  isBlueVerified Boolean  @default(false)
+  blueVerifiedAt DateTime?
+  blueVerifiedById String?
   passwordHash  String?
   twoFactorEnabled Boolean @default(false)
   twoFactorMethod  TwoFactorMethod @default(EMAIL)
@@ -64,11 +93,23 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  blueVerifiedBy User? @relation("BlueBadgeVerifier", fields: [blueVerifiedById], references: [id], onDelete: SetNull)
+  blueVerifiedUsers User[] @relation("BlueBadgeVerifier")
+
   profile   Profile?
   semesters Semester[]
   posts     Post[]
   postLikes PostLike[]
   comments  PostComment[]
+  commentReactions PostCommentReaction[]
+  postMentions PostMention[] @relation("MentionedInPost")
+  commentMentions CommentMention[] @relation("MentionedInComment")
+
+  profileVerificationRequests ProfileVerificationRequest[] @relation("ProfileVerificationRequester")
+  reviewedProfileVerifications ProfileVerificationRequest[] @relation("ProfileVerificationReviewer")
+  reviewedSemesters Semester[] @relation("SemesterReviewedBy")
+  adminActions AdminActionLog[] @relation("AdminActor")
+  targetedAdminActions AdminActionLog[] @relation("AdminTarget")
 
   accounts Account[]
   sessions Session[]
@@ -108,15 +149,24 @@ model Semester {
   index     Int
   name      String?
   status    SemesterStatus @default(FINISHED)
+  verificationStatus SemesterVerificationStatus @default(NOT_REQUESTED)
+  verificationDocumentUrl String?
+  verificationDocumentName String?
+  verificationRequestedAt DateTime?
+  verificationReviewedAt DateTime?
+  verificationReviewNote String?
+  verificationReviewedById String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verificationReviewedBy User? @relation("SemesterReviewedBy", fields: [verificationReviewedById], references: [id], onDelete: SetNull)
   subjects    Subject[]
   visibility  SemesterVisibility[]
   postShares  PostSharedSemester[]
 
   @@unique([userId, index])
+  @@index([verificationStatus])
 }
 
 model Post {
@@ -132,6 +182,8 @@ model Post {
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   likes           PostLike[]
   comments        PostComment[]
+  media           PostMedia[]
+  mentions        PostMention[]
   sharedSemesters PostSharedSemester[]
 
   @@index([createdAt(sort: Desc)])
@@ -166,14 +218,110 @@ model PostComment {
   id        String   @id @default(cuid())
   postId    String
   userId    String
+  parentId  String?
   content   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent PostComment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies PostComment[] @relation("CommentReplies")
+  reactions PostCommentReaction[]
+  mentions CommentMention[]
 
   @@index([postId, createdAt(sort: Desc)])
+  @@index([parentId, createdAt(sort: Asc)])
+}
+
+model PostMedia {
+  id        String   @id @default(cuid())
+  postId    String
+  url       String
+  fileName  String?
+  mimeType  String?
+  sizeBytes Int?
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt(sort: Asc)])
+}
+
+model PostCommentReaction {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  reactionType PostReactionType @default(LIKE)
+  createdAt DateTime @default(now())
+
+  comment PostComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+}
+
+model PostMention {
+  id              String   @id @default(cuid())
+  postId          String
+  mentionedUserId String
+  createdAt       DateTime @default(now())
+
+  post          Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  mentionedUser User @relation("MentionedInPost", fields: [mentionedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, mentionedUserId])
+  @@index([mentionedUserId, createdAt(sort: Desc)])
+}
+
+model CommentMention {
+  id              String   @id @default(cuid())
+  commentId       String
+  mentionedUserId String
+  createdAt       DateTime @default(now())
+
+  comment       PostComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  mentionedUser User        @relation("MentionedInComment", fields: [mentionedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, mentionedUserId])
+  @@index([mentionedUserId, createdAt(sort: Desc)])
+}
+
+model ProfileVerificationRequest {
+  id           String                    @id @default(cuid())
+  userId       String
+  documentType IdentityDocumentType
+  documentUrl  String
+  documentName String?
+  status       VerificationRequestStatus @default(PENDING)
+  reviewedById String?
+  reviewNote   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  user       User  @relation("ProfileVerificationRequester", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("ProfileVerificationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model AdminActionLog {
+  id           String   @id @default(cuid())
+  adminId      String
+  targetUserId String?
+  action       String
+  entityType   String?
+  entityId     String?
+  detailsJson  String?
+  createdAt    DateTime @default(now())
+
+  admin      User  @relation("AdminActor", fields: [adminId], references: [id], onDelete: Cascade)
+  targetUser User? @relation("AdminTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([adminId, createdAt(sort: Desc)])
+  @@index([targetUserId, createdAt(sort: Desc)])
 }
 
 model Subject {

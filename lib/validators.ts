@@ -110,17 +110,35 @@ export const postVisibilitySchema = z.enum(["FRIENDS", "PUBLIC"]);
 export const profileVisibilitySchema = z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]);
 export const twoFactorMethodSchema = z.enum(["EMAIL", "PHONE"]);
 export const reactionTypeSchema = z.enum(["LIKE", "LOVE", "HAHA", "WOW", "SAD", "ANGRY"]);
+export const userRoleSchema = z.enum(["USER", "ADMIN", "SUPER_ADMIN"]);
+export const verificationRequestStatusSchema = z.enum(["PENDING", "APPROVED", "REJECTED"]);
+export const identityDocumentTypeSchema = z.enum(["ID_CARD", "PASSPORT", "OTHER"]);
+export const semesterVerificationStatusSchema = z.enum([
+  "NOT_REQUESTED",
+  "PENDING",
+  "APPROVED",
+  "REJECTED"
+]);
+
+const postMediaInputSchema = z.object({
+  url: z.string().trim().min(1).max(500),
+  fileName: cleanedOptionalString,
+  mimeType: cleanedOptionalString,
+  sizeBytes: z.coerce.number().int().positive().max(200 * 1024 * 1024).optional()
+});
 
 export const createPostSchema = z.object({
   content: z.string().trim().max(2000).default(""),
   visibility: postVisibilitySchema.optional(),
   includeOverallPercentage: z.boolean().optional().default(false),
-  sharedSemesterIds: z.array(z.string().min(1)).max(20).default([])
+  sharedSemesterIds: z.array(z.string().min(1)).max(20).default([]),
+  media: z.array(postMediaInputSchema).max(12).default([])
 }).superRefine((value, context) => {
   if (
     value.content.trim().length === 0 &&
     !value.includeOverallPercentage &&
-    value.sharedSemesterIds.length === 0
+    value.sharedSemesterIds.length === 0 &&
+    value.media.length === 0
   ) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -130,13 +148,22 @@ export const createPostSchema = z.object({
   }
 });
 
+export const updatePostSchema = createPostSchema;
+
 export const createCommentSchema = z.object({
+  content: z.string().trim().min(1).max(1000),
+  parentCommentId: cleanedOptionalString
+});
+
+export const updateCommentSchema = z.object({
   content: z.string().trim().min(1).max(1000)
 });
 
 export const postReactionSchema = z.object({
   reaction: z.union([reactionTypeSchema, z.literal("NONE")]).default("LIKE")
 });
+
+export const commentReactionSchema = postReactionSchema;
 
 export const securitySettingsSchema = z.object({
   profileVisibility: profileVisibilitySchema,
@@ -170,4 +197,28 @@ export const changePasswordSchema = z.object({
 
 export const emailChangeRequestSchema = z.object({
   newEmail: z.string().trim().email()
+});
+
+export const profileVerificationRequestSchema = z.object({
+  documentType: identityDocumentTypeSchema,
+  documentUrl: z.string().trim().min(1).max(500),
+  documentName: cleanedOptionalString
+});
+
+export const semesterVerificationRequestSchema = z.object({
+  semesterId: z.string().min(1),
+  documentUrl: z.string().trim().min(1).max(500),
+  documentName: cleanedOptionalString
+});
+
+export const adminReviewSchema = z.object({
+  action: z.enum(["APPROVE", "REJECT"]),
+  note: cleanedOptionalString
+});
+
+export const adminUserUpdateSchema = z.object({
+  role: userRoleSchema.optional(),
+  isBlueVerified: z.boolean().optional()
+}).refine((value) => value.role !== undefined || value.isBlueVerified !== undefined, {
+  message: "At least one field must be provided"
 });

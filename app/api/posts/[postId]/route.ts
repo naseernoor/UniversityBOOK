@@ -2,32 +2,46 @@ import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
 import { resolveMentionedUsers } from "@/lib/mentions";
-import { getFeedPosts, getPostByIdForViewer } from "@/lib/posts";
+import { getPostByIdForViewer } from "@/lib/posts";
 import { prisma } from "@/lib/prisma";
+import { isAdminRole } from "@/lib/roles";
 import { buildPerformanceSummary } from "@/lib/semester";
-import { createPostSchema } from "@/lib/validators";
+import { updatePostSchema } from "@/lib/validators";
 
-export async function GET() {
+type Params = {
+  params: {
+    postId: string;
+  };
+};
+
+export async function PATCH(request: Request, { params }: Params) {
   const session = await getServerAuthSession();
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const posts = await getFeedPosts(session.user.id);
-  return NextResponse.json({ posts });
-}
+  const existingPost = await prisma.post.findUnique({
+    where: {
+      id: params.postId
+    },
+    select: {
+      id: true,
+      userId: true
+    }
+  });
 
-export async function POST(request: Request) {
-  const session = await getServerAuthSession();
+  if (!existingPost) {
+    return NextResponse.json({ error: "Post not found" }, { status: 404 });
+  }
 
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (existingPost.userId !== session.user.id) {
+    return NextResponse.json({ error: "Only post owner can edit this post" }, { status: 403 });
   }
 
   try {
     const body = await request.json();
-    const parsed = createPostSchema.safeParse(body);
+    const parsed = updatePostSchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -42,13 +56,13 @@ export async function POST(request: Request) {
     const data = parsed.data;
     const sharedSemesterIds = [...new Set(data.sharedSemesterIds)];
     const mentions = await resolveMentionedUsers({
-      authorId: session.user.id,
+      authorId: existingPost.userId,
       content: data.content
     });
 
     const userProfile = await prisma.profile.findUnique({
       where: {
-        userId: session.user.id
+        userId: existingPost.userId
       },
       select: {
         defaultPostVisibility: true,
@@ -64,7 +78,7 @@ export async function POST(request: Request) {
 
     const ownedSemesters = await prisma.semester.findMany({
       where: {
-        userId: session.user.id,
+        userId: existingPost.userId,
         id: {
           in: sharedSemesterIds
         }
@@ -87,7 +101,7 @@ export async function POST(request: Request) {
     if (data.includeOverallPercentage) {
       const semesters = await prisma.semester.findMany({
         where: {
-          userId: session.user.id
+          userId: existingPost.userId
         },
         include: {
           subjects: true,
@@ -109,14 +123,23 @@ export async function POST(request: Request) {
       overallPercentageSnapshot = summary.overallPercentage;
     }
 
-    const created = await prisma.post.create({
+    await prisma.post.update({
+      where: {
+        id: params.postId
+      },
       data: {
-        userId: session.user.id,
         content: data.content,
         visibility: data.visibility ?? userProfile.defaultPostVisibility,
         includeOverallPercentage: data.includeOverallPercentage,
         overallPercentageSnapshot,
+        sharedSemesters: {
+          deleteMany: {},
+          create: ownedSemesters.map((semester) => ({
+            semesterId: semester.id
+          }))
+        },
         media: {
+          deleteMany: {},
           create: data.media.map((item) => ({
             url: item.url,
             fileName: item.fileName ?? null,
@@ -125,26 +148,81 @@ export async function POST(request: Request) {
           }))
         },
         mentions: {
+          deleteMany: {},
           create: mentions.map((mentionedUser) => ({
             mentionedUserId: mentionedUser.id
           }))
-        },
-        sharedSemesters: {
-          create: ownedSemesters.map((semester) => ({
-            semesterId: semester.id
-          }))
         }
-      },
-      select: {
-        id: true
       }
     });
 
-    const post = await getPostByIdForViewer(created.id, session.user.id);
-
+    const post = await getPostByIdForViewer(params.postId, session.user.id);
     return NextResponse.json({ post });
   } catch (error) {
-    console.error("Post creation failed", error);
+    console.error("Post update failed", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export async function DELETE(_request: Request, { params }: Params) {
+  const session = await getServerAuthSession();
+
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const [actor, post] = await Promise.all([
+    prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        id: true,
+        role: true
+      }
+    }),
+    prisma.post.findUnique({
+      where: {
+        id: params.postId
+      },
+      select: {
+        id: true,
+        userId: true
+      }
+    })
+  ]);
+
+  if (!actor) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  if (!post) {
+    return NextResponse.json({ error: "Post not found" }, { status: 404 });
+  }
+
+  const isOwner = post.userId === actor.id;
+  if (!isOwner && !isAdminRole(actor.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await prisma.post.delete({
+    where: {
+      id: params.postId
+    }
+  });
+
+  if (!isOwner) {
+    await prisma.adminActionLog.create({
+      data: {
+        adminId: actor.id,
+        targetUserId: post.userId,
+        action: "DELETE_POST",
+        entityType: "POST",
+        entityId: post.id
+      }
+    });
+  }
+
+  return NextResponse.json({ message: "Post deleted" });
+}
+

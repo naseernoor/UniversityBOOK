@@ -29,6 +29,8 @@ export async function GET() {
       username: true,
       name: true,
       image: true,
+      role: true,
+      isBlueVerified: true,
       profile: true
     }
   });
@@ -176,8 +178,11 @@ export async function PUT(request: Request) {
       },
       select: {
         id: true,
+        email: true,
         username: true,
         image: true,
+        role: true,
+        isBlueVerified: true,
         profile: true
       }
     });

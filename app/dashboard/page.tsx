@@ -20,6 +20,8 @@ export default async function DashboardPage() {
       email: true,
       username: true,
       image: true,
+      role: true,
+      isBlueVerified: true,
       profile: true
     }
   });

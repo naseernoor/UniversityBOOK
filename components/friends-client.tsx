@@ -159,6 +159,26 @@ export default function FriendsClient() {
     await loadData();
   };
 
+  const removeRequest = async (requestId: string) => {
+    setError(null);
+    setMessage(null);
+
+    const response = await fetch(`/api/friends/requests/${requestId}`, {
+      method: "DELETE"
+    });
+
+    const data = (await response.json()) as { error?: string; message?: string };
+
+    if (!response.ok) {
+      setError(data.error ?? "Could not remove request");
+      return;
+    }
+
+    setMessage(data.message ?? "Request removed");
+    await searchUsers();
+    await loadData();
+  };
+
   const removeFriend = async (friendId: string) => {
     setError(null);
     setMessage(null);
@@ -290,6 +310,13 @@ export default function FriendsClient() {
                   >
                     Reject
                   </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => removeRequest(request.id)}
+                  >
+                    Remove
+                  </button>
                 </div>
               </article>
             ))
@@ -315,6 +342,13 @@ export default function FriendsClient() {
                   </p>
                   <p className="text-xs text-brand-600">Pending</p>
                 </div>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => removeRequest(request.id)}
+                >
+                  Cancel request
+                </button>
               </article>
             ))
           )}

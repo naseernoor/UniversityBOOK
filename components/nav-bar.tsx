@@ -28,6 +28,11 @@ export default function NavBar() {
               <Link href="/friends" className="nav-pill">
                 Friends
               </Link>
+              {session.user.role === "ADMIN" || session.user.role === "SUPER_ADMIN" ? (
+                <Link href="/admin" className="nav-pill">
+                  Admin
+                </Link>
+              ) : null}
               <Link href="/register" className="nav-pill">
                 New Account
               </Link>

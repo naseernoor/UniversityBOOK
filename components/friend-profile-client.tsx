@@ -46,6 +46,8 @@ type FriendProfilePayload = {
     username: string | null;
     email: string | null;
     image: string | null;
+    role?: "USER" | "ADMIN" | "SUPER_ADMIN";
+    isBlueVerified?: boolean;
     profile: Profile | null;
   };
   semesters: Semester[];
@@ -101,6 +103,11 @@ export default function FriendProfileClient({ userId }: FriendProfileClientProps
           <div>
             <h1 className="text-3xl font-black text-white">
               {data.user.username ?? data.user.email ?? data.user.name ?? "Student"}
+              {data.user.isBlueVerified ? (
+                <span className="ml-2 rounded-full bg-sky-100 px-2 py-1 text-xs font-semibold text-sky-700">
+                  Verified
+                </span>
+              ) : null}
             </h1>
             <p className="mt-2 text-sm text-brand-100">
               Shared semesters visible to you as an accepted friend.

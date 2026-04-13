@@ -57,3 +57,32 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export async function DELETE(_request: Request, { params }: Params) {
+  const session = await getServerAuthSession();
+
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const deleted = await prisma.friendRequest.deleteMany({
+    where: {
+      id: params.requestId,
+      status: "PENDING",
+      OR: [
+        {
+          senderId: session.user.id
+        },
+        {
+          recipientId: session.user.id
+        }
+      ]
+    }
+  });
+
+  if (deleted.count === 0) {
+    return NextResponse.json({ error: "Pending request not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ message: "Friend request removed" });
+}

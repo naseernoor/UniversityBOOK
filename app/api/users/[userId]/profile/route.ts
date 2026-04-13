@@ -28,6 +28,8 @@ export async function GET(_request: Request, { params }: Params) {
       username: true,
       email: true,
       image: true,
+      role: true,
+      isBlueVerified: true,
       profile: true
     }
   });
@@ -97,6 +99,8 @@ export async function GET(_request: Request, { params }: Params) {
         username: targetUser.username,
         email: null,
         image: targetUser.image,
+        role: targetUser.role,
+        isBlueVerified: targetUser.isBlueVerified,
         profile: targetUser.profile
       },
       semesters: [],
@@ -149,6 +153,8 @@ export async function GET(_request: Request, { params }: Params) {
       username: targetUser.username,
       email: targetUser.email,
       image: targetUser.image,
+      role: targetUser.role,
+      isBlueVerified: targetUser.isBlueVerified,
       profile: targetUser.profile
     },
     ...summary

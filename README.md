@@ -15,10 +15,15 @@ Full-stack university marks, transcript, friends, and social study platform buil
 - Semester status (`ONGOING` / `FINISHED`) where only finished semesters count in overall percentage
 - Subject-level management with edit/delete and optional `subject code`, `teacher name`, and lecture uploads
 - Excel export/import for marks with row-level validation issues on import
-- Stylish transcript PDF export with field-visibility controls and Persian/Pashto-friendly fonts
+- Stylish transcript PDF export with field-visibility controls and modern Arabic/Persian/Pashto-friendly fonts
 - Feed-first dashboard with profile/add-semester views
-- Social posts: text posts, share semesters, share overall percentage, modern reactions, comments, and public/friends visibility
-- Friends by request/approval flow with remove-friend support
+- Social posts: text/media posts, share semesters, share overall percentage, modern reactions, mentions, comment replies, and public/friends visibility
+- Post and comment edit/delete controls with admin moderation support
+- Friends by request/approval flow with request withdrawal/removal from both sender and recipient
+- Role-based access (`USER`, `ADMIN`, `SUPER_ADMIN`) with admin control center
+- Blue badge verification requests (ID/passport) and admin approval workflow
+- Semester transcript verification requests with admin approval/rejection and re-verification on edits
+- Admin user activity visibility and management tools
 - Per-semester and overall percentage analytics
 - Chance analytics (2nd/3rd chance counts)
 - Minimum passing marks and retake queues
@@ -43,6 +48,7 @@ Create `.env` from `.env.example` and set:
 - `DATABASE_URL` (PostgreSQL connection string)
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
+- `SUPER_ADMIN_EMAILS` (optional comma-separated emails to auto-assign `SUPER_ADMIN` role on sign-in)
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (optional)
 - `APPLE_ID` / `APPLE_CLIENT_SECRET` (optional)
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` (required for sending verification/reset emails)

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
-import { canViewPost } from "@/lib/posts";
+import { resolveMentionedUsers } from "@/lib/mentions";
+import { canViewPost, getPostByIdForViewer } from "@/lib/posts";
 import { prisma } from "@/lib/prisma";
 import { createCommentSchema } from "@/lib/validators";
 
@@ -40,48 +41,48 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
-    const comment = await prisma.postComment.create({
+    const parentCommentId = parsed.data.parentCommentId ?? null;
+
+    if (parentCommentId) {
+      const parentComment = await prisma.postComment.findFirst({
+        where: {
+          id: parentCommentId,
+          postId: params.postId
+        },
+        select: {
+          id: true
+        }
+      });
+
+      if (!parentComment) {
+        return NextResponse.json({ error: "Parent comment not found" }, { status: 404 });
+      }
+    }
+
+    const mentionedUsers = await resolveMentionedUsers({
+      authorId: session.user.id,
+      content: parsed.data.content
+    });
+
+    await prisma.postComment.create({
       data: {
         postId: params.postId,
         userId: session.user.id,
-        content: parsed.data.content
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            image: true,
-            profile: {
-              select: {
-                firstName: true,
-                lastName: true
-              }
-            }
-          }
+        parentId: parentCommentId,
+        content: parsed.data.content,
+        mentions: {
+          create: mentionedUsers.map((user) => ({
+            mentionedUserId: user.id
+          }))
         }
       }
     });
 
-    const commentsCount = await prisma.postComment.count({
-      where: {
-        postId: params.postId
-      }
-    });
-
-    return NextResponse.json({
-      comment: {
-        id: comment.id,
-        content: comment.content,
-        createdAt: comment.createdAt,
-        updatedAt: comment.updatedAt,
-        user: comment.user
-      },
-      commentsCount
-    });
+    const post = await getPostByIdForViewer(params.postId, session.user.id);
+    return NextResponse.json({ post });
   } catch (error) {
     console.error("Comment creation failed", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+

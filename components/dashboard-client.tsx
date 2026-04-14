@@ -239,7 +239,10 @@ type SemesterDraft = {
   subjects: SubjectDraft[];
 };
 
+type TranscriptLanguage = "EN" | "FA" | "PS";
+
 type TranscriptOptions = {
+  language: TranscriptLanguage;
   showFatherName: boolean;
   showUniversity: boolean;
   showFaculty: boolean;
@@ -298,6 +301,153 @@ const formatDateTime = (value: string) =>
 const mentionPartRegex = /(@[\p{L}\p{N}_.-]{3,30})/gu;
 const rtlRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/u;
 const hasRtlText = (value: string | null | undefined) => typeof value === "string" && rtlRegex.test(value);
+const waitForPaint = async () => {
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
+};
+
+const TRANSCRIPT_LABELS: Record<
+  TranscriptLanguage,
+  {
+    title: string;
+    subtitle: string;
+    generated: string;
+    student: string;
+    studentInformation: string;
+    username: string;
+    email: string;
+    gender: string;
+    degree: string;
+    yearOfEnrollment: string;
+    dateOfBirth: string;
+    totalSemesters: string;
+    overallPercentage: string;
+    finishedSemesters: string;
+    fatherName: string;
+    university: string;
+    faculty: string;
+    department: string;
+    semester: string;
+    semesterPercentage: string;
+    subject: string;
+    score: string;
+    credits: string;
+    chance: string;
+    code: string;
+    teacher: string;
+    finished: string;
+    ongoing: string;
+  }
+> = {
+  EN: {
+    title: "Official Academic Transcript",
+    subtitle: "UniBOOK - Student Report",
+    generated: "Generated",
+    student: "Student",
+    studentInformation: "Student Information",
+    username: "Username",
+    email: "Email",
+    gender: "Gender",
+    degree: "Degree",
+    yearOfEnrollment: "Year of Enrollment",
+    dateOfBirth: "Date of Birth",
+    totalSemesters: "Total Semesters",
+    overallPercentage: "Overall Percentage",
+    finishedSemesters: "Finished Semesters",
+    fatherName: "Father Name",
+    university: "University",
+    faculty: "Faculty",
+    department: "Department",
+    semester: "Semester",
+    semesterPercentage: "Semester Percentage",
+    subject: "Subject",
+    score: "Score %",
+    credits: "Credits",
+    chance: "Chance",
+    code: "Code",
+    teacher: "Teacher",
+    finished: "Finished",
+    ongoing: "Ongoing"
+  },
+  FA: {
+    title: "کارنامه تحصیلی رسمی",
+    subtitle: "UniBOOK - گزارش دانشجو",
+    generated: "تاریخ صدور",
+    student: "دانشجو",
+    studentInformation: "اطلاعات دانشجو",
+    username: "نام کاربری",
+    email: "ایمیل",
+    gender: "جنسیت",
+    degree: "مقطع",
+    yearOfEnrollment: "سال ورود",
+    dateOfBirth: "تاریخ تولد",
+    totalSemesters: "تعداد سمسترها",
+    overallPercentage: "فیصدی عمومی",
+    finishedSemesters: "سمسترهای تکمیل‌شده",
+    fatherName: "نام پدر",
+    university: "دانشگاه",
+    faculty: "دانشکده",
+    department: "دیپارتمنت",
+    semester: "سمستر",
+    semesterPercentage: "فیصدی سمستر",
+    subject: "مضمون",
+    score: "نمره ٪",
+    credits: "کردیت",
+    chance: "چانس",
+    code: "کد",
+    teacher: "استاد",
+    finished: "تکمیل‌شده",
+    ongoing: "در جریان"
+  },
+  PS: {
+    title: "رسمي تحصيلي ټرانسکرېپټ",
+    subtitle: "UniBOOK - د محصل راپور",
+    generated: "د جوړېدو نېټه",
+    student: "محصل",
+    studentInformation: "د محصل معلومات",
+    username: "کارن نوم",
+    email: "برېښنالیک",
+    gender: "جنس",
+    degree: "درجه",
+    yearOfEnrollment: "د شمول کال",
+    dateOfBirth: "د زېږېدو نېټه",
+    totalSemesters: "د سمسترونو شمېر",
+    overallPercentage: "عمومي سلنه",
+    finishedSemesters: "بشپړ شوي سمسترونه",
+    fatherName: "د پلار نوم",
+    university: "پوهنتون",
+    faculty: "پوهنځی",
+    department: "څانګه",
+    semester: "سمستر",
+    semesterPercentage: "د سمستر سلنه",
+    subject: "مضمون",
+    score: "نمره ٪",
+    credits: "کردیټ",
+    chance: "چانس",
+    code: "کوډ",
+    teacher: "استاد",
+    finished: "بشپړ شوی",
+    ongoing: "روان"
+  }
+};
+
+const TRANSCRIPT_DEGREE_LABELS: Record<TranscriptLanguage, Record<DegreeLevel, string>> = {
+  EN: {
+    BACHELOR: "Bachelor",
+    MASTER: "Master",
+    PHD: "PhD"
+  },
+  FA: {
+    BACHELOR: "لیسانس",
+    MASTER: "ماستری",
+    PHD: "دکترا"
+  },
+  PS: {
+    BACHELOR: "لیسانس",
+    MASTER: "ماسټري",
+    PHD: "دوکتورا"
+  }
+};
 
 const renderContentWithMentions = (value: string) =>
   value.split(mentionPartRegex).map((part, index) =>
@@ -489,6 +639,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
   >([]);
 
   const [transcriptOptions, setTranscriptOptions] = useState<TranscriptOptions>({
+    language: "EN",
     showFatherName: true,
     showUniversity: true,
     showFaculty: true,
@@ -1853,6 +2004,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
   const downloadTranscriptPdf = async () => {
     setGeneratingTranscript(true);
     clearNotifications();
+    let renderHost: HTMLDivElement | null = null;
 
     try {
       const html2pdfModule = await import("html2pdf.js");
@@ -1866,31 +2018,38 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
         };
       };
 
-      const studentName = `${profileForm.firstName} ${profileForm.lastName}`.trim() || user.username || "Student";
+      const transcriptLanguage = transcriptOptions.language;
+      const labels = TRANSCRIPT_LABELS[transcriptLanguage];
+      const transcriptDirection = transcriptLanguage === "EN" ? "ltr" : "rtl";
+      const transcriptAlignment = transcriptDirection === "rtl" ? "right" : "left";
+      const studentName = `${profileForm.firstName} ${profileForm.lastName}`.trim() || user.username || labels.student;
+      const genderValue = (profileForm.gender ?? "PREFER_NOT_TO_SAY").replace(/_/g, " ");
+      const statusLabel = (status: SemesterStatus) =>
+        status === "FINISHED" ? labels.finished : labels.ongoing;
 
       const infoRows: Array<[string, string]> = [
-        ["Username", profileForm.username || "-"],
-        ["Email", user.email ?? "-"],
-        ["Gender", profileForm.gender.replace(/_/g, " ")],
-        ["Degree", DEGREE_LABELS[profileForm.degreeLevel]],
-        ["Year Of Enrollment", String(profileForm.yearOfEnrollment)],
-        ["Date Of Birth", profileForm.dateOfBirth || "-"],
-        ["Total Semesters", String(profileForm.totalSemesters)],
-        ["Overall Percentage", `${overallPercentage.toFixed(2)}%`],
-        ["Finished Semesters", String(completedSemesters)]
+        [labels.username, profileForm.username || "-"],
+        [labels.email, user.email ?? "-"],
+        [labels.gender, genderValue],
+        [labels.degree, TRANSCRIPT_DEGREE_LABELS[transcriptLanguage][profileForm.degreeLevel]],
+        [labels.yearOfEnrollment, String(profileForm.yearOfEnrollment)],
+        [labels.dateOfBirth, profileForm.dateOfBirth || "-"],
+        [labels.totalSemesters, String(profileForm.totalSemesters)],
+        [labels.overallPercentage, `${overallPercentage.toFixed(2)}%`],
+        [labels.finishedSemesters, String(completedSemesters)]
       ];
 
       if (transcriptOptions.showFatherName) {
-        infoRows.push(["Father Name", profileForm.fatherName || "-"]);
+        infoRows.push([labels.fatherName, profileForm.fatherName || "-"]);
       }
       if (transcriptOptions.showUniversity) {
-        infoRows.push(["University", profileForm.university || "-"]);
+        infoRows.push([labels.university, profileForm.university || "-"]);
       }
       if (transcriptOptions.showFaculty) {
-        infoRows.push(["Faculty", profileForm.faculty || "-"]);
+        infoRows.push([labels.faculty, profileForm.faculty || "-"]);
       }
       if (transcriptOptions.showDepartment) {
-        infoRows.push(["Department", profileForm.department || "-"]);
+        infoRows.push([labels.department, profileForm.department || "-"]);
       }
 
       const infoTableRows = infoRows
@@ -1909,22 +2068,21 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
           ...semester.subjects.flatMap((subject) => [subject.name, subject.code ?? "", subject.teacherName ?? ""])
         ])
       ].some((value) => hasRtlText(value));
-      const transcriptAlignment = transcriptHasRtlContent ? "right" : "left";
 
       const semesterBlocks = sortedSemesters
         .map((semester) => {
-          const columns = ["Subject", "Score %"];
+          const columns = [labels.subject, labels.score];
           if (transcriptOptions.showCredits) {
-            columns.push("Credits");
+            columns.push(labels.credits);
           }
           if (transcriptOptions.showChance) {
-            columns.push("Chance");
+            columns.push(labels.chance);
           }
           if (transcriptOptions.showCode) {
-            columns.push("Code");
+            columns.push(labels.code);
           }
           if (transcriptOptions.showTeacher) {
-            columns.push("Teacher");
+            columns.push(labels.teacher);
           }
 
           const headerCells = columns
@@ -1956,11 +2114,11 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
             })
             .join("");
 
-          const statusText = transcriptOptions.showSemesterStatus ? ` (${semester.status})` : "";
+          const statusText = transcriptOptions.showSemesterStatus ? ` (${statusLabel(semester.status)})` : "";
           return `
             <section style="margin-top:16px;break-inside:avoid;">
-              <h3 style="margin:0 0 6px 0;color:#154d3f;">Semester ${formatSemesterNumber(semester.index, totalSemesters)}${semester.name ? ` - ${toTranscriptCell(semester.name)}` : ""}${statusText}</h3>
-              <p style="margin:0 0 8px 0;color:#2f5f54;">Semester Percentage: ${semester.percentage.toFixed(2)}%</p>
+              <h3 style="margin:0 0 6px 0;color:#154d3f;">${labels.semester} ${formatSemesterNumber(semester.index, totalSemesters)}${semester.name ? ` - ${toTranscriptCell(semester.name)}` : ""}${statusText}</h3>
+              <p style="margin:0 0 8px 0;color:#2f5f54;">${labels.semesterPercentage}: ${semester.percentage.toFixed(2)}%</p>
               <table style="width:100%;border-collapse:collapse;font-size:12px;">
                 <thead><tr>${headerCells}</tr></thead>
                 <tbody>${bodyRows}</tbody>
@@ -1970,25 +2128,36 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
         })
         .join("");
 
+      renderHost = document.createElement("div");
+      renderHost.style.position = "fixed";
+      renderHost.style.left = "-200vw";
+      renderHost.style.top = "0";
+      renderHost.style.width = "850px";
+      renderHost.style.background = "#ffffff";
+      renderHost.style.opacity = "1";
+      renderHost.style.pointerEvents = "none";
+      renderHost.style.zIndex = "-1";
+
       const container = document.createElement("div");
       container.className = "font-transcript";
       container.style.padding = "20px";
       container.style.background = "#ffffff";
       container.style.color = "#13211d";
       container.style.width = "794px";
+      container.style.minHeight = "1123px";
       container.style.margin = "0 auto";
-      container.style.direction = transcriptHasRtlContent ? "rtl" : "ltr";
-      container.style.unicodeBidi = "plaintext";
+      container.style.direction = transcriptDirection;
+      container.style.unicodeBidi = transcriptHasRtlContent ? "plaintext" : "normal";
       container.innerHTML = `
-        <div lang="${transcriptHasRtlContent ? "fa" : "en"}" style="font-family: 'Noto Naskh Arabic', Cairo, Vazirmatn, Amiri, Tahoma, sans-serif;text-align:${transcriptAlignment};">
+        <div lang="${transcriptLanguage === "EN" ? "en" : transcriptLanguage === "FA" ? "fa" : "ps"}" style="font-family: 'Noto Naskh Arabic', Cairo, Vazirmatn, Amiri, Tahoma, sans-serif;text-align:${transcriptAlignment};direction:${transcriptDirection};">
           <header style="background:linear-gradient(135deg,#0f5a49,#1f7a64);padding:18px;border-radius:14px;color:#fff;">
-            <h1 style="margin:0;font-size:24px;">Official Academic Transcript</h1>
-            <p style="margin:8px 0 0 0;font-size:13px;">UniBOOK - Student Report</p>
-            <p style="margin:6px 0 0 0;font-size:12px;">Generated: ${escapeHtml(new Date().toLocaleString())}</p>
-            <p style="margin:6px 0 0 0;font-size:13px;">Student: ${escapeHtml(studentName)}</p>
+            <h1 style="margin:0;font-size:24px;">${labels.title}</h1>
+            <p style="margin:8px 0 0 0;font-size:13px;">${labels.subtitle}</p>
+            <p style="margin:6px 0 0 0;font-size:12px;">${labels.generated}: ${escapeHtml(new Date().toLocaleString())}</p>
+            <p style="margin:6px 0 0 0;font-size:13px;">${labels.student}: ${toTranscriptCell(studentName)}</p>
           </header>
           <section style="margin-top:16px;">
-            <h2 style="margin:0 0 8px 0;color:#154d3f;">Student Information</h2>
+            <h2 style="margin:0 0 8px 0;color:#154d3f;">${labels.studentInformation}</h2>
             <table style="width:100%;border-collapse:collapse;font-size:12px;">
               <tbody>${infoTableRows}</tbody>
             </table>
@@ -1997,10 +2166,12 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
         </div>
       `;
 
-      document.body.appendChild(container);
+      renderHost.appendChild(container);
+      document.body.appendChild(renderHost);
       if (document.fonts && "ready" in document.fonts) {
         await document.fonts.ready;
       }
+      await waitForPaint();
 
       const safeUsername = (user.username ?? "student").replace(/[^a-zA-Z0-9_-]/g, "_");
       await html2pdf()
@@ -2008,19 +2179,28 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
           margin: 8,
           filename: `transcript-${safeUsername}.pdf`,
           image: { type: "jpeg", quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, foreignObjectRendering: true },
+          pagebreak: { mode: ["css", "legacy"] },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: "#ffffff",
+            windowWidth: 850,
+            windowHeight: Math.max(container.scrollHeight, 1123)
+          },
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
         })
         .from(container)
         .save();
-
-      document.body.removeChild(container);
 
       setMessage("Transcript PDF downloaded");
     } catch (requestError) {
       console.error("PDF generation failed", requestError);
       setError("Failed to generate transcript PDF");
     } finally {
+      if (renderHost?.parentNode) {
+        renderHost.parentNode.removeChild(renderHost);
+      }
       setGeneratingTranscript(false);
     }
   };
@@ -3123,6 +3303,23 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 Choose which fields to display in your official transcript and download it.
               </p>
 
+              <Field label="Transcript Language">
+                <select
+                  className="input"
+                  value={transcriptOptions.language}
+                  onChange={(event) =>
+                    setTranscriptOptions((previous) => ({
+                      ...previous,
+                      language: event.target.value as TranscriptLanguage
+                    }))
+                  }
+                >
+                  <option value="EN">English</option>
+                  <option value="FA">فارسی</option>
+                  <option value="PS">پښتو</option>
+                </select>
+              </Field>
+
               <div className="grid gap-2 text-sm text-brand-900">
                 {(
                   [
@@ -3135,7 +3332,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                     ["showTeacher", "Show teacher"],
                     ["showCode", "Show subject code"],
                     ["showChance", "Show chance"]
-                  ] as Array<[keyof TranscriptOptions, string]>
+                  ] as Array<[Exclude<keyof TranscriptOptions, "language">, string]>
                 ).map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
                     <input

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { isMissingSchemaError } from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 import { notificationReadSchema } from "@/lib/validators";
 
@@ -11,52 +12,63 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [notifications, unreadCount] = await Promise.all([
-    prisma.notification.findMany({
-      where: {
-        userId: session.user.id
-      },
-      select: {
-        id: true,
-        type: true,
-        title: true,
-        body: true,
-        link: true,
-        readAt: true,
-        createdAt: true,
-        actor: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            image: true,
-            isBlueVerified: true,
-            profile: {
-              select: {
-                firstName: true,
-                lastName: true
+  try {
+    const [notifications, unreadCount] = await Promise.all([
+      prisma.notification.findMany({
+        where: {
+          userId: session.user.id
+        },
+        select: {
+          id: true,
+          type: true,
+          title: true,
+          body: true,
+          link: true,
+          readAt: true,
+          createdAt: true,
+          actor: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              image: true,
+              isBlueVerified: true,
+              profile: {
+                select: {
+                  firstName: true,
+                  lastName: true
+                }
               }
             }
           }
+        },
+        orderBy: {
+          createdAt: "desc"
+        },
+        take: 60
+      }),
+      prisma.notification.count({
+        where: {
+          userId: session.user.id,
+          readAt: null
         }
-      },
-      orderBy: {
-        createdAt: "desc"
-      },
-      take: 60
-    }),
-    prisma.notification.count({
-      where: {
-        userId: session.user.id,
-        readAt: null
-      }
-    })
-  ]);
+      })
+    ]);
 
-  return NextResponse.json({
-    notifications,
-    unreadCount
-  });
+    return NextResponse.json({
+      notifications,
+      unreadCount
+    });
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error;
+    }
+
+    return NextResponse.json({
+      notifications: [],
+      unreadCount: 0
+    });
+  }
 }
 
 export async function PATCH(request: Request) {
@@ -82,15 +94,21 @@ export async function PATCH(request: Request) {
   const now = new Date();
 
   if (parsed.data.markAll) {
-    await prisma.notification.updateMany({
-      where: {
-        userId: session.user.id,
-        readAt: null
-      },
-      data: {
-        readAt: now
+    try {
+      await prisma.notification.updateMany({
+        where: {
+          userId: session.user.id,
+          readAt: null
+        },
+        data: {
+          readAt: now
+        }
+      });
+    } catch (error) {
+      if (!isMissingSchemaError(error)) {
+        throw error;
       }
-    });
+    }
 
     return NextResponse.json({
       message: "All notifications marked as read"
@@ -101,15 +119,25 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "notificationId is required" }, { status: 400 });
   }
 
-  const updated = await prisma.notification.updateMany({
-    where: {
-      id: parsed.data.notificationId,
-      userId: session.user.id
-    },
-    data: {
-      readAt: now
+  let updated;
+
+  try {
+    updated = await prisma.notification.updateMany({
+      where: {
+        id: parsed.data.notificationId,
+        userId: session.user.id
+      },
+      data: {
+        readAt: now
+      }
+    });
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error;
     }
-  });
+
+    return NextResponse.json({ message: "Notifications are not available yet" });
+  }
 
   if (updated.count === 0) {
     return NextResponse.json({ error: "Notification not found" }, { status: 404 });
@@ -117,4 +145,3 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({ message: "Notification marked as read" });
 }
-

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { isMissingProfileGenderError, legacyProfileSelect } from "@/lib/db-compat";
 import { getRelationshipStatus } from "@/lib/friends";
 import { prisma } from "@/lib/prisma";
 import { buildPerformanceSummary } from "@/lib/semester";
@@ -18,21 +19,47 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const targetUser = await prisma.user.findUnique({
-    where: {
-      id: params.userId
-    },
-    select: {
-      id: true,
-      name: true,
-      username: true,
-      email: true,
-      image: true,
-      role: true,
-      isBlueVerified: true,
-      profile: true
+  let targetUser;
+
+  try {
+    targetUser = await prisma.user.findUnique({
+      where: {
+        id: params.userId
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        image: true,
+        role: true,
+        isBlueVerified: true,
+        profile: true
+      }
+    });
+  } catch (error) {
+    if (!isMissingProfileGenderError(error)) {
+      throw error;
     }
-  });
+
+    targetUser = await prisma.user.findUnique({
+      where: {
+        id: params.userId
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        image: true,
+        role: true,
+        isBlueVerified: true,
+        profile: {
+          select: legacyProfileSelect
+        }
+      }
+    });
+  }
 
   if (!targetUser) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });

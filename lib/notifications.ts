@@ -1,5 +1,6 @@
 import { NotificationType, UserRole } from "@prisma/client";
 
+import { isMissingSchemaError } from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 
 type CreateNotificationInput = {
@@ -13,17 +14,24 @@ type CreateNotificationInput = {
 };
 
 export const createNotification = async (input: CreateNotificationInput) => {
-  return prisma.notification.create({
-    data: {
-      userId: input.userId,
-      actorId: input.actorId ?? null,
-      type: input.type,
-      title: input.title,
-      body: input.body,
-      link: input.link ?? null,
-      dataJson: input.data ? JSON.stringify(input.data) : null
+  try {
+    return await prisma.notification.create({
+      data: {
+        userId: input.userId,
+        actorId: input.actorId ?? null,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        link: input.link ?? null,
+        dataJson: input.data ? JSON.stringify(input.data) : null
+      }
+    });
+  } catch (error) {
+    if (isMissingSchemaError(error)) {
+      return null;
     }
-  });
+    throw error;
+  }
 };
 
 export const createNotificationsBulk = async (
@@ -33,17 +41,24 @@ export const createNotificationsBulk = async (
     return;
   }
 
-  await prisma.notification.createMany({
-    data: inputs.map((input) => ({
-      userId: input.userId,
-      actorId: input.actorId ?? null,
-      type: input.type,
-      title: input.title,
-      body: input.body,
-      link: input.link ?? null,
-      dataJson: input.data ? JSON.stringify(input.data) : null
-    }))
-  });
+  try {
+    await prisma.notification.createMany({
+      data: inputs.map((input) => ({
+        userId: input.userId,
+        actorId: input.actorId ?? null,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        link: input.link ?? null,
+        dataJson: input.data ? JSON.stringify(input.data) : null
+      }))
+    });
+  } catch (error) {
+    if (isMissingSchemaError(error)) {
+      return;
+    }
+    throw error;
+  }
 };
 
 export const notifyAdmins = async (params: {
@@ -81,4 +96,3 @@ export const notifyAdmins = async (params: {
     }))
   );
 };
-

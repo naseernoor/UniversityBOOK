@@ -83,7 +83,7 @@ export async function PUT(request: Request) {
           twoFactorPhone: data.twoFactorMethod === "PHONE" ? data.twoFactorPhone ?? null : null
         }
       }),
-      prisma.profile.update({
+      prisma.profile.updateMany({
         where: {
           userId: session.user.id
         },

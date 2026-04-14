@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { isMissingProfileGenderError, legacyProfileSelect } from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 import { isAdminRole, isSuperAdminRole } from "@/lib/roles";
 import { adminUserUpdateSchema } from "@/lib/validators";
@@ -31,33 +32,71 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: {
-      id: params.userId
-    },
-    select: {
-      id: true,
-      username: true,
-      email: true,
-      role: true,
-      image: true,
-      isBlueVerified: true,
-      blueVerifiedAt: true,
-      emailVerified: true,
-      createdAt: true,
-      updatedAt: true,
-      profile: true,
-      _count: {
-        select: {
-          posts: true,
-          comments: true,
-          semesters: true,
-          sentFriendRequests: true,
-          receivedFriendRequests: true
+  let user;
+
+  try {
+    user = await prisma.user.findUnique({
+      where: {
+        id: params.userId
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        image: true,
+        isBlueVerified: true,
+        blueVerifiedAt: true,
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+        profile: true,
+        _count: {
+          select: {
+            posts: true,
+            comments: true,
+            semesters: true,
+            sentFriendRequests: true,
+            receivedFriendRequests: true
+          }
         }
       }
+    });
+  } catch (error) {
+    if (!isMissingProfileGenderError(error)) {
+      throw error;
     }
-  });
+
+    user = await prisma.user.findUnique({
+      where: {
+        id: params.userId
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        image: true,
+        isBlueVerified: true,
+        blueVerifiedAt: true,
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+        profile: {
+          select: legacyProfileSelect
+        },
+        _count: {
+          select: {
+            posts: true,
+            comments: true,
+            semesters: true,
+            sentFriendRequests: true,
+            receivedFriendRequests: true
+          }
+        }
+      }
+    });
+  }
 
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -180,4 +219,3 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
-

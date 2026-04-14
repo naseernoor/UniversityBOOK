@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { isMissingSchemaError } from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 import { isAdminRole } from "@/lib/roles";
 
@@ -45,6 +46,56 @@ export async function GET(_request: Request, { params }: Params) {
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+
+  const notificationsPromise = prisma.notification
+    .findMany({
+      where: {
+        userId: user.id
+      },
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        body: true,
+        readAt: true,
+        createdAt: true
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: 80
+    })
+    .catch((error) => {
+      if (isMissingSchemaError(error)) {
+        return [];
+      }
+      throw error;
+    });
+
+  const messagesPromise = prisma.message
+    .findMany({
+      where: {
+        OR: [{ senderId: user.id }, { recipientId: user.id }]
+      },
+      select: {
+        id: true,
+        senderId: true,
+        recipientId: true,
+        content: true,
+        readAt: true,
+        createdAt: true
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: 120
+    })
+    .catch((error) => {
+      if (isMissingSchemaError(error)) {
+        return [];
+      }
+      throw error;
+    });
 
   const [posts, comments, friendRequests, semesters, profileVerifications, adminActions, notifications, messages] =
     await Promise.all([
@@ -164,40 +215,8 @@ export async function GET(_request: Request, { params }: Params) {
         },
         take: 80
       }),
-      prisma.notification.findMany({
-        where: {
-          userId: user.id
-        },
-        select: {
-          id: true,
-          type: true,
-          title: true,
-          body: true,
-          readAt: true,
-          createdAt: true
-        },
-        orderBy: {
-          createdAt: "desc"
-        },
-        take: 80
-      }),
-      prisma.message.findMany({
-        where: {
-          OR: [{ senderId: user.id }, { recipientId: user.id }]
-        },
-        select: {
-          id: true,
-          senderId: true,
-          recipientId: true,
-          content: true,
-          readAt: true,
-          createdAt: true
-        },
-        orderBy: {
-          createdAt: "desc"
-        },
-        take: 120
-      })
+      notificationsPromise,
+      messagesPromise
     ]);
 
   return NextResponse.json({

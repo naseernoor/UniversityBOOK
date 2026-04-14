@@ -78,7 +78,7 @@ type Profile = {
   firstName: string;
   lastName: string;
   fatherName: string;
-  gender: "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY";
+  gender?: "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY";
   university: string;
   faculty: string;
   department: string;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { isMissingSchemaError } from "@/lib/db-compat";
 import { areUsersFriends } from "@/lib/friends";
 import { createNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
@@ -28,59 +29,80 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Messaging is available only for friends" }, { status: 403 });
   }
 
-  const [friend, messages] = await Promise.all([
-    prisma.user.findUnique({
-      where: {
-        id: params.userId
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        image: true,
-        isBlueVerified: true,
-        profile: {
-          select: {
-            firstName: true,
-            lastName: true
+  let friend;
+  let messages;
+
+  try {
+    [friend, messages] = await Promise.all([
+      prisma.user.findUnique({
+        where: {
+          id: params.userId
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          image: true,
+          isBlueVerified: true,
+          profile: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
           }
         }
-      }
-    }),
-    prisma.message.findMany({
-      where: {
-        OR: [
-          {
-            senderId: session.user.id,
-            recipientId: params.userId
-          },
-          {
-            senderId: params.userId,
-            recipientId: session.user.id
-          }
-        ]
-      },
-      orderBy: {
-        createdAt: "asc"
-      },
-      take: 500
-    })
-  ]);
+      }),
+      prisma.message.findMany({
+        where: {
+          OR: [
+            {
+              senderId: session.user.id,
+              recipientId: params.userId
+            },
+            {
+              senderId: params.userId,
+              recipientId: session.user.id
+            }
+          ]
+        },
+        orderBy: {
+          createdAt: "asc"
+        },
+        take: 500
+      })
+    ]);
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error;
+    }
+
+    return NextResponse.json({
+      friend: null,
+      messages: [],
+      unavailable: true
+    });
+  }
 
   if (!friend) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  await prisma.message.updateMany({
-    where: {
-      senderId: params.userId,
-      recipientId: session.user.id,
-      readAt: null
-    },
-    data: {
-      readAt: new Date()
+  try {
+    await prisma.message.updateMany({
+      where: {
+        senderId: params.userId,
+        recipientId: session.user.id,
+        readAt: null
+      },
+      data: {
+        readAt: new Date()
+      }
+    });
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error;
     }
-  });
+  }
 
   return NextResponse.json({
     friend,
@@ -117,13 +139,26 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  const message = await prisma.message.create({
-    data: {
-      senderId: session.user.id,
-      recipientId: params.userId,
-      content: parsed.data.content
+  let message;
+
+  try {
+    message = await prisma.message.create({
+      data: {
+        senderId: session.user.id,
+        recipientId: params.userId,
+        content: parsed.data.content
+      }
+    });
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error;
     }
-  });
+
+    return NextResponse.json(
+      { error: "Messaging is temporarily unavailable until the database upgrade is completed" },
+      { status: 503 }
+    );
+  }
 
   const sender = await prisma.user.findUnique({
     where: {
@@ -161,4 +196,3 @@ export async function POST(request: Request, { params }: Params) {
     message
   });
 }
-

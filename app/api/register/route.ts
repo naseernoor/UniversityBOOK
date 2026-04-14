@@ -1,6 +1,7 @@
 import { hash } from "bcryptjs";
 import { NextResponse } from "next/server";
 
+import { isMissingProfileGenderError, stripGenderField } from "@/lib/db-compat";
 import { sendVerificationEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { createEmailVerificationToken } from "@/lib/tokens";
@@ -43,28 +44,30 @@ export async function POST(request: Request) {
 
     const passwordHash = await hash(data.password, 12);
 
-    const user = await prisma.user.create({
+    const profileCreateData = {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      fatherName: data.fatherName,
+      gender: data.gender,
+      university: data.university,
+      faculty: data.faculty,
+      department: data.department,
+      degreeLevel: data.degreeLevel,
+      yearOfEnrollment: data.yearOfEnrollment,
+      dateOfBirth: data.dateOfBirth,
+      totalSemesters: data.totalSemesters,
+      minimumPassingMarks: data.minimumPassingMarks,
+      idealPercentage: data.idealPercentage ?? null
+    };
+
+    const createInput = {
       data: {
         email,
         username,
         passwordHash,
         name: `${data.firstName} ${data.lastName}`,
         profile: {
-          create: {
-            firstName: data.firstName,
-            lastName: data.lastName,
-            fatherName: data.fatherName,
-            gender: data.gender,
-            university: data.university,
-            faculty: data.faculty,
-            department: data.department,
-            degreeLevel: data.degreeLevel,
-            yearOfEnrollment: data.yearOfEnrollment,
-            dateOfBirth: data.dateOfBirth,
-            totalSemesters: data.totalSemesters,
-            minimumPassingMarks: data.minimumPassingMarks,
-            idealPercentage: data.idealPercentage ?? null
-          }
+          create: profileCreateData
         }
       },
       select: {
@@ -72,7 +75,27 @@ export async function POST(request: Request) {
         email: true,
         username: true
       }
-    });
+    } as const;
+
+    let user;
+
+    try {
+      user = await prisma.user.create(createInput);
+    } catch (error) {
+      if (!isMissingProfileGenderError(error)) {
+        throw error;
+      }
+
+      user = await prisma.user.create({
+        ...createInput,
+        data: {
+          ...createInput.data,
+          profile: {
+            create: stripGenderField(profileCreateData)
+          }
+        }
+      });
+    }
 
     const verificationToken = await createEmailVerificationToken(email);
     await sendVerificationEmail({

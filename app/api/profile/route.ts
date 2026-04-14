@@ -2,6 +2,11 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import {
+  isMissingProfileGenderError,
+  legacyProfileSelect,
+  stripGenderField
+} from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 import { onboardingSchema, profileTargetSchema, profileUpsertSchema } from "@/lib/validators";
 
@@ -19,21 +24,47 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: {
-      id: session.user.id
-    },
-    select: {
-      id: true,
-      email: true,
-      username: true,
-      name: true,
-      image: true,
-      role: true,
-      isBlueVerified: true,
-      profile: true
+  let user;
+
+  try {
+    user = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        name: true,
+        image: true,
+        role: true,
+        isBlueVerified: true,
+        profile: true
+      }
+    });
+  } catch (error) {
+    if (!isMissingProfileGenderError(error)) {
+      throw error;
     }
-  });
+
+    user = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        name: true,
+        image: true,
+        role: true,
+        isBlueVerified: true,
+        profile: {
+          select: legacyProfileSelect
+        }
+      }
+    });
+  }
 
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -61,7 +92,8 @@ export async function PUT(request: Request) {
         data: {
           totalSemesters: targetParsed.data.totalSemesters,
           idealPercentage: targetParsed.data.idealPercentage
-        }
+        },
+        select: legacyProfileSelect
       });
 
       return NextResponse.json({ profile: updated });
@@ -135,7 +167,23 @@ export async function PUT(request: Request) {
       }
     }
 
-    const updatedUser = await prisma.user.update({
+    const baseProfileData = {
+      firstName: profileData.firstName,
+      lastName: profileData.lastName,
+      fatherName: profileData.fatherName,
+      gender: profileData.gender,
+      university: profileData.university,
+      faculty: profileData.faculty,
+      department: profileData.department,
+      degreeLevel: profileData.degreeLevel,
+      yearOfEnrollment: profileData.yearOfEnrollment,
+      dateOfBirth: profileData.dateOfBirth,
+      totalSemesters: profileData.totalSemesters,
+      minimumPassingMarks: profileData.minimumPassingMarks,
+      idealPercentage: profileData.idealPercentage ?? null
+    };
+
+    const userUpdateInput = {
       where: {
         id: session.user.id
       },
@@ -145,36 +193,8 @@ export async function PUT(request: Request) {
         ...(profileImageUrl ? { image: profileImageUrl } : {}),
         profile: {
           upsert: {
-            create: {
-              firstName: profileData.firstName,
-              lastName: profileData.lastName,
-              fatherName: profileData.fatherName,
-              gender: profileData.gender,
-              university: profileData.university,
-              faculty: profileData.faculty,
-              department: profileData.department,
-              degreeLevel: profileData.degreeLevel,
-              yearOfEnrollment: profileData.yearOfEnrollment,
-              dateOfBirth: profileData.dateOfBirth,
-              totalSemesters: profileData.totalSemesters,
-              minimumPassingMarks: profileData.minimumPassingMarks,
-              idealPercentage: profileData.idealPercentage ?? null
-            },
-            update: {
-              firstName: profileData.firstName,
-              lastName: profileData.lastName,
-              fatherName: profileData.fatherName,
-              gender: profileData.gender,
-              university: profileData.university,
-              faculty: profileData.faculty,
-              department: profileData.department,
-              degreeLevel: profileData.degreeLevel,
-              yearOfEnrollment: profileData.yearOfEnrollment,
-              dateOfBirth: profileData.dateOfBirth,
-              totalSemesters: profileData.totalSemesters,
-              minimumPassingMarks: profileData.minimumPassingMarks,
-              idealPercentage: profileData.idealPercentage ?? null
-            }
+            create: baseProfileData,
+            update: baseProfileData
           }
         }
       },
@@ -187,7 +207,36 @@ export async function PUT(request: Request) {
         isBlueVerified: true,
         profile: true
       }
-    });
+    } as const;
+
+    let updatedUser;
+
+    try {
+      updatedUser = await prisma.user.update(userUpdateInput);
+    } catch (error) {
+      if (!isMissingProfileGenderError(error)) {
+        throw error;
+      }
+
+      updatedUser = await prisma.user.update({
+        ...userUpdateInput,
+        data: {
+          ...userUpdateInput.data,
+          profile: {
+            upsert: {
+              create: stripGenderField(baseProfileData),
+              update: stripGenderField(baseProfileData)
+            }
+          }
+        },
+        select: {
+          ...userUpdateInput.select,
+          profile: {
+            select: legacyProfileSelect
+          }
+        }
+      });
+    }
 
     return NextResponse.json({ user: updatedUser });
   } catch (error) {

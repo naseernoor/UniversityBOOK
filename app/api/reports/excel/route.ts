@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 
 import { getServerAuthSession } from "@/lib/auth";
 import { calculateOverallPercentage } from "@/lib/calculations";
+import { isMissingProfileGenderError, legacyProfileSelect } from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 
 type ValidationIssue = {
@@ -83,33 +84,60 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [user, semesters] = await Promise.all([
-    prisma.user.findUnique({
-      where: {
-        id: session.user.id
-      },
-      select: {
-        email: true,
-        username: true,
-        profile: true
+  let user;
+  const semestersPromise = prisma.semester.findMany({
+    where: {
+      userId: session.user.id
+    },
+    include: {
+      subjects: {
+        orderBy: {
+          createdAt: "asc"
+        }
       }
-    }),
-    prisma.semester.findMany({
-      where: {
-        userId: session.user.id
-      },
-      include: {
-        subjects: {
-          orderBy: {
-            createdAt: "asc"
+    },
+    orderBy: {
+      index: "asc"
+    }
+  });
+
+  try {
+    [user] = await Promise.all([
+      prisma.user.findUnique({
+        where: {
+          id: session.user.id
+        },
+        select: {
+          email: true,
+          username: true,
+          profile: true
+        }
+      }),
+      semestersPromise
+    ]);
+  } catch (error) {
+    if (!isMissingProfileGenderError(error)) {
+      throw error;
+    }
+
+    [user] = await Promise.all([
+      prisma.user.findUnique({
+        where: {
+          id: session.user.id
+        },
+        select: {
+          email: true,
+          username: true,
+          profile: {
+            select: legacyProfileSelect
           }
         }
-      },
-      orderBy: {
-        index: "asc"
-      }
-    })
-  ]);
+      }),
+      semestersPromise
+    ]);
+  }
+
+  const semesters = await semestersPromise;
 
   if (!user?.profile) {
     return NextResponse.json(
@@ -137,7 +165,7 @@ export async function GET() {
     ["First Name", user.profile.firstName],
     ["Last Name", user.profile.lastName],
     ["Father Name", user.profile.fatherName],
-    ["Gender", user.profile.gender],
+    ["Gender", "gender" in user.profile ? String(user.profile.gender ?? "") : ""],
     ["University", user.profile.university],
     ["Faculty", user.profile.faculty],
     ["Department", user.profile.department],

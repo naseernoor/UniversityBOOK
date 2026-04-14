@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { isMissingSchemaError } from "@/lib/db-compat";
 import { getAcceptedFriends } from "@/lib/friends";
 import { prisma } from "@/lib/prisma";
 
@@ -19,43 +20,54 @@ export async function GET() {
 
   const friendIds = friends.map((friend) => friend.id);
 
-  const [latestMessages, unreadCounts] = await Promise.all([
-    prisma.message.findMany({
-      where: {
-        OR: [
-          {
-            senderId: session.user.id,
-            recipientId: {
-              in: friendIds
-            }
-          },
-          {
-            senderId: {
-              in: friendIds
+  let latestMessages;
+  let unreadCounts;
+
+  try {
+    [latestMessages, unreadCounts] = await Promise.all([
+      prisma.message.findMany({
+        where: {
+          OR: [
+            {
+              senderId: session.user.id,
+              recipientId: {
+                in: friendIds
+              }
             },
-            recipientId: session.user.id
-          }
-        ]
-      },
-      orderBy: {
-        createdAt: "desc"
-      },
-      take: 400
-    }),
-    prisma.message.groupBy({
-      by: ["senderId"],
-      where: {
-        recipientId: session.user.id,
-        senderId: {
-          in: friendIds
+            {
+              senderId: {
+                in: friendIds
+              },
+              recipientId: session.user.id
+            }
+          ]
         },
-        readAt: null
-      },
-      _count: {
-        _all: true
-      }
-    })
-  ]);
+        orderBy: {
+          createdAt: "desc"
+        },
+        take: 400
+      }),
+      prisma.message.groupBy({
+        by: ["senderId"],
+        where: {
+          recipientId: session.user.id,
+          senderId: {
+            in: friendIds
+          },
+          readAt: null
+        },
+        _count: {
+          _all: true
+        }
+      })
+    ]);
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error;
+    }
+
+    return NextResponse.json({ conversations: [] });
+  }
 
   const latestByFriend = new Map<string, (typeof latestMessages)[number]>();
   for (const message of latestMessages) {
@@ -85,4 +97,3 @@ export async function GET() {
 
   return NextResponse.json({ conversations });
 }
-

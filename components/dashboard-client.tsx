@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import VerificationBadge from "@/components/verification-badge";
 import { DEGREE_DEFAULT_SEMESTERS, DEGREE_LABELS, DegreeLevel } from "@/lib/academic";
 import { toAssetUrl } from "@/lib/blob-url";
 
@@ -243,6 +244,7 @@ type TranscriptLanguage = "EN" | "FA" | "PS";
 
 type TranscriptOptions = {
   language: TranscriptLanguage;
+  themeColor: string;
   showFatherName: boolean;
   showUniversity: boolean;
   showFaculty: boolean;
@@ -311,6 +313,7 @@ const TRANSCRIPT_LABELS: Record<
   {
     title: string;
     subtitle: string;
+    officialLetterhead: string;
     generated: string;
     student: string;
     studentInformation: string;
@@ -337,11 +340,14 @@ const TRANSCRIPT_LABELS: Record<
     teacher: string;
     finished: string;
     ongoing: string;
+    adminVerified: string;
+    developedBy: string;
   }
 > = {
   EN: {
     title: "Official Academic Transcript",
     subtitle: "UniBOOK - Student Report",
+    officialLetterhead: "Official Academic Record",
     generated: "Generated",
     student: "Student",
     studentInformation: "Student Information",
@@ -367,11 +373,14 @@ const TRANSCRIPT_LABELS: Record<
     code: "Code",
     teacher: "Teacher",
     finished: "Finished",
-    ongoing: "Ongoing"
+    ongoing: "Ongoing",
+    adminVerified: "Admin Verified",
+    developedBy: "Developed and managed by Naseer Khan NOOR, member of NOOR family"
   },
   FA: {
     title: "کارنامه تحصیلی رسمی",
     subtitle: "UniBOOK - گزارش دانشجو",
+    officialLetterhead: "سند رسمی تحصیلی",
     generated: "تاریخ صدور",
     student: "دانشجو",
     studentInformation: "اطلاعات دانشجو",
@@ -397,11 +406,14 @@ const TRANSCRIPT_LABELS: Record<
     code: "کد",
     teacher: "استاد",
     finished: "تکمیل‌شده",
-    ongoing: "در جریان"
+    ongoing: "در جریان",
+    adminVerified: "تأییدشده توسط ادمین",
+    developedBy: "Developed and managed by Naseer Khan NOOR, member of NOOR family"
   },
   PS: {
     title: "رسمي تحصيلي ټرانسکرېپټ",
     subtitle: "UniBOOK - د محصل راپور",
+    officialLetterhead: "رسمي تحصيلي سند",
     generated: "د جوړېدو نېټه",
     student: "محصل",
     studentInformation: "د محصل معلومات",
@@ -427,7 +439,9 @@ const TRANSCRIPT_LABELS: Record<
     code: "کوډ",
     teacher: "استاد",
     finished: "بشپړ شوی",
-    ongoing: "روان"
+    ongoing: "روان",
+    adminVerified: "د ادمین له خوا تائید شوی",
+    developedBy: "Developed and managed by Naseer Khan NOOR, member of NOOR family"
   }
 };
 
@@ -447,6 +461,106 @@ const TRANSCRIPT_DEGREE_LABELS: Record<TranscriptLanguage, Record<DegreeLevel, s
     MASTER: "ماسټري",
     PHD: "دوکتورا"
   }
+};
+
+const TRANSCRIPT_GENDER_LABELS: Record<
+  TranscriptLanguage,
+  Record<NonNullable<Profile["gender"]>, string>
+> = {
+  EN: {
+    MALE: "Male",
+    FEMALE: "Female",
+    OTHER: "Other",
+    PREFER_NOT_TO_SAY: "Prefer not to say"
+  },
+  FA: {
+    MALE: "مذکر",
+    FEMALE: "مونث",
+    OTHER: "دیگر",
+    PREFER_NOT_TO_SAY: "ترجیح می‌دهم ذکر نشود"
+  },
+  PS: {
+    MALE: "نارینه",
+    FEMALE: "ښځینه",
+    OTHER: "نور",
+    PREFER_NOT_TO_SAY: "نه غواړم څرګند شي"
+  }
+};
+
+const TRANSCRIPT_COLOR_PRESETS = [
+  { label: "Emerald", value: "#0f7a5c" },
+  { label: "Royal Blue", value: "#1e4fd1" },
+  { label: "Burgundy", value: "#8f2847" },
+  { label: "Slate", value: "#38556d" },
+  { label: "Amber", value: "#b86a13" },
+  { label: "Forest", value: "#25643b" }
+] as const;
+
+const clampColorChannel = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+
+const hexToRgb = (hex: string) => {
+  const normalized = hex.replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return { r: 15, g: 122, b: 92 };
+  }
+
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16)
+  };
+};
+
+const rgbToHex = (rgb: { r: number; g: number; b: number }) =>
+  `#${[rgb.r, rgb.g, rgb.b]
+    .map((channel) => clampColorChannel(channel).toString(16).padStart(2, "0"))
+    .join("")}`;
+
+const mixHex = (hex: string, mixWith: string, amount: number) => {
+  const base = hexToRgb(hex);
+  const mix = hexToRgb(mixWith);
+  const ratio = Math.max(0, Math.min(1, amount));
+
+  return rgbToHex({
+    r: base.r + (mix.r - base.r) * ratio,
+    g: base.g + (mix.g - base.g) * ratio,
+    b: base.b + (mix.b - base.b) * ratio
+  });
+};
+
+const alphaColor = (hex: string, alpha: number) => {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const sanitizeHexColor = (value: string) =>
+  /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : "#0f7a5c";
+
+const buildTranscriptLogoHtml = (accentColor: string, labels: (typeof TRANSCRIPT_LABELS)[TranscriptLanguage]) => {
+  const deepAccent = mixHex(accentColor, "#0a2a22", 0.34);
+  const letterheadColor = mixHex(accentColor, "#ffffff", 0.72);
+  return `
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="width:58px;height:58px;border-radius:18px;background:linear-gradient(145deg,${deepAccent},${accentColor});display:flex;align-items:center;justify-content:center;box-shadow:0 12px 24px ${alphaColor(accentColor, 0.24)};">
+        <span style="font-size:20px;font-weight:800;letter-spacing:0.08em;color:#ffffff;">UB</span>
+      </div>
+      <div>
+        <p style="margin:0;font-size:24px;font-weight:800;letter-spacing:0.04em;color:#ffffff;">UniBOOK</p>
+        <p style="margin:4px 0 0 0;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${letterheadColor};">${labels.officialLetterhead}</p>
+      </div>
+    </div>
+  `;
+};
+
+const buildTranscriptVerificationBadgeHtml = (accentColor: string, label: string) => {
+  const darkAccent = mixHex(accentColor, "#10271f", 0.36);
+  const softAccent = alphaColor(accentColor, 0.14);
+  return `
+    <span style="display:inline-flex;align-items:center;gap:8px;border:1px solid ${alphaColor(accentColor, 0.28)};background:${softAccent};padding:7px 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.04em;color:${darkAccent};white-space:nowrap;">
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:${accentColor};color:#ffffff;font-size:11px;line-height:1;">✓</span>
+      ${escapeHtml(label)}
+    </span>
+  `;
 };
 
 const renderContentWithMentions = (value: string) =>
@@ -475,12 +589,14 @@ const getPersonDisplayName = (params: {
   return params.username ?? params.email ?? params.name ?? "User";
 };
 
-const toTranscriptCell = (value: string) => {
+const toTranscriptCell = (value: string, options?: { inline?: boolean; align?: "left" | "center" | "right" }) => {
   const escaped = escapeHtml(value);
-  if (rtlRegex.test(value)) {
-    return `<span style="display:block;direction:rtl;text-align:right;unicode-bidi:plaintext;font-family:'Noto Naskh Arabic','Cairo','Vazirmatn','Amiri',Tahoma,sans-serif;">${escaped}</span>`;
-  }
-  return escaped;
+  const isRtl = rtlRegex.test(value);
+  const display = options?.inline ? "inline-block" : "block";
+  const align = options?.align ?? (isRtl ? "right" : "left");
+  const direction = isRtl ? "rtl" : "ltr";
+
+  return `<span style="display:${display};direction:${direction};text-align:${align};unicode-bidi:plaintext;font-family:${isRtl ? "'Noto Naskh Arabic','Cairo','Vazirmatn','Amiri',Tahoma,sans-serif" : "inherit"};overflow-wrap:anywhere;word-break:break-word;white-space:normal;max-width:100%;">${escaped}</span>`;
 };
 
 const updateCommentTree = (
@@ -640,6 +756,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
 
   const [transcriptOptions, setTranscriptOptions] = useState<TranscriptOptions>({
     language: "EN",
+    themeColor: "#0f7a5c",
     showFatherName: true,
     showUniversity: true,
     showFaculty: true,
@@ -671,6 +788,40 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
     newEmail: ""
   });
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("unibook-transcript-options");
+      if (!stored) {
+        return;
+      }
+
+      const parsed = JSON.parse(stored) as Partial<TranscriptOptions>;
+      setTranscriptOptions((previous) => ({
+        ...previous,
+        ...(parsed.language ? { language: parsed.language } : {}),
+        ...(typeof parsed.themeColor === "string"
+          ? { themeColor: sanitizeHexColor(parsed.themeColor) }
+          : {})
+      }));
+    } catch {
+      // Ignore invalid local preferences and keep defaults.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "unibook-transcript-options",
+        JSON.stringify({
+          language: transcriptOptions.language,
+          themeColor: sanitizeHexColor(transcriptOptions.themeColor)
+        })
+      );
+    } catch {
+      // Storage failures should not affect transcript generation.
+    }
+  }, [transcriptOptions.language, transcriptOptions.themeColor]);
 
   const totalSemesters = Math.max(1, Number(profileForm.totalSemesters) || 1);
 
@@ -2022,8 +2173,14 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       const labels = TRANSCRIPT_LABELS[transcriptLanguage];
       const transcriptDirection = transcriptLanguage === "EN" ? "ltr" : "rtl";
       const transcriptAlignment = transcriptDirection === "rtl" ? "right" : "left";
+      const accentColor = sanitizeHexColor(transcriptOptions.themeColor);
+      const deepAccent = mixHex(accentColor, "#0d241d", 0.46);
+      const panelAccent = mixHex(accentColor, "#ffffff", 0.95);
+      const headerHighlight = mixHex(accentColor, "#ffffff", 0.42);
+      const borderAccent = alphaColor(accentColor, 0.24);
       const studentName = `${profileForm.firstName} ${profileForm.lastName}`.trim() || user.username || labels.student;
-      const genderValue = (profileForm.gender ?? "PREFER_NOT_TO_SAY").replace(/_/g, " ");
+      const genderKey = profileForm.gender ?? "PREFER_NOT_TO_SAY";
+      const genderValue = TRANSCRIPT_GENDER_LABELS[transcriptLanguage][genderKey];
       const statusLabel = (status: SemesterStatus) =>
         status === "FINISHED" ? labels.finished : labels.ongoing;
 
@@ -2055,7 +2212,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       const infoTableRows = infoRows
         .map(
           ([field, value]) =>
-            `<tr><td style="padding:8px;border:1px solid #c7ded4;font-weight:700;">${toTranscriptCell(field)}</td><td style="padding:8px;border:1px solid #c7ded4;">${toTranscriptCell(value)}</td></tr>`
+            `<tr><td style="padding:10px 12px;border:1px solid ${borderAccent};font-weight:800;background:${alphaColor(accentColor, 0.05)};width:34%;">${toTranscriptCell(field)}</td><td style="padding:10px 12px;border:1px solid ${borderAccent};">${toTranscriptCell(value)}</td></tr>`
         )
         .join("");
 
@@ -2071,55 +2228,97 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
 
       const semesterBlocks = sortedSemesters
         .map((semester) => {
-          const columns = [labels.subject, labels.score];
-          if (transcriptOptions.showCredits) {
-            columns.push(labels.credits);
-          }
-          if (transcriptOptions.showChance) {
-            columns.push(labels.chance);
-          }
-          if (transcriptOptions.showCode) {
-            columns.push(labels.code);
-          }
-          if (transcriptOptions.showTeacher) {
-            columns.push(labels.teacher);
-          }
+          const columns = [
+            { key: "subject", label: labels.subject, width: 36, align: transcriptAlignment as "left" | "right" },
+            ...(transcriptOptions.showTeacher
+              ? [{ key: "teacher", label: labels.teacher, width: 19, align: transcriptAlignment as "left" | "right" }]
+              : []),
+            ...(transcriptOptions.showCode
+              ? [{ key: "code", label: labels.code, width: 13, align: transcriptAlignment as "left" | "right" }]
+              : []),
+            ...(transcriptOptions.showCredits
+              ? [{ key: "credits", label: labels.credits, width: 9, align: "center" as const }]
+              : []),
+            ...(transcriptOptions.showChance
+              ? [{ key: "chance", label: labels.chance, width: 9, align: "center" as const }]
+              : []),
+            { key: "score", label: labels.score, width: 14, align: "center" as const }
+          ];
 
-          const headerCells = columns
+          const totalWidth = columns.reduce((sum, column) => sum + column.width, 0);
+          const normalizedColumns = columns.map((column) => ({
+            ...column,
+            width: `${((column.width / totalWidth) * 100).toFixed(2)}%`
+          }));
+
+          const colGroup = normalizedColumns
+            .map(
+              (column) => `<col style="width:${column.width};" />`
+            )
+            .join("");
+
+          const headerCells = normalizedColumns
             .map(
               (column) =>
-                `<th style="padding:8px;border:1px solid #c7ded4;background:#e7f5f0;text-align:${transcriptAlignment};">${escapeHtml(column)}</th>`
+                `<th style="padding:9px 10px;border:1px solid ${borderAccent};background:${alphaColor(accentColor, 0.08)};text-align:${column.align};font-size:11px;font-weight:800;vertical-align:top;">${escapeHtml(column.label)}</th>`
             )
             .join("");
 
           const bodyRows = semester.subjects
             .map((subject) => {
-              const cells = [toTranscriptCell(subject.name), toTranscriptCell(subject.score.toFixed(2))];
-              if (transcriptOptions.showCredits) {
-                cells.push(toTranscriptCell(String(subject.credits)));
-              }
-              if (transcriptOptions.showChance) {
-                cells.push(toTranscriptCell(String(subject.chance)));
-              }
-              if (transcriptOptions.showCode) {
-                cells.push(toTranscriptCell(subject.code ?? "-"));
-              }
-              if (transcriptOptions.showTeacher) {
-                cells.push(toTranscriptCell(subject.teacherName ?? "-"));
-              }
+              const cells = normalizedColumns.map((column) => {
+                switch (column.key) {
+                  case "subject":
+                    return toTranscriptCell(subject.name, { align: transcriptAlignment as "left" | "right" });
+                  case "teacher":
+                    return toTranscriptCell(subject.teacherName ?? "-", {
+                      align: transcriptAlignment as "left" | "right"
+                    });
+                  case "code":
+                    return toTranscriptCell(subject.code ?? "-", {
+                      align: transcriptAlignment as "left" | "right"
+                    });
+                  case "credits":
+                    return toTranscriptCell(String(subject.credits), { align: "center" });
+                  case "chance":
+                    return toTranscriptCell(String(subject.chance), { align: "center" });
+                  case "score":
+                    return toTranscriptCell(subject.score.toFixed(2), { align: "center" });
+                  default:
+                    return toTranscriptCell("-");
+                }
+              });
 
               return `<tr>${cells
-                .map((cell) => `<td style="padding:8px;border:1px solid #c7ded4;">${cell}</td>`)
+                .map(
+                  (cell, index) =>
+                    `<td style="padding:9px 10px;border:1px solid ${borderAccent};text-align:${normalizedColumns[index]?.align ?? transcriptAlignment};vertical-align:top;overflow-wrap:anywhere;word-break:break-word;white-space:normal;">${cell}</td>`
+                )
                 .join("")}</tr>`;
             })
             .join("");
 
           const statusText = transcriptOptions.showSemesterStatus ? ` (${statusLabel(semester.status)})` : "";
+          const verificationBadge =
+            semester.verificationStatus === "APPROVED"
+              ? buildTranscriptVerificationBadgeHtml(accentColor, labels.adminVerified)
+              : "";
           return `
-            <section style="margin-top:16px;break-inside:avoid;">
-              <h3 style="margin:0 0 6px 0;color:#154d3f;">${labels.semester} ${formatSemesterNumber(semester.index, totalSemesters)}${semester.name ? ` - ${toTranscriptCell(semester.name)}` : ""}${statusText}</h3>
-              <p style="margin:0 0 8px 0;color:#2f5f54;">${labels.semesterPercentage}: ${semester.percentage.toFixed(2)}%</p>
-              <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <section style="position:relative;margin-top:18px;break-inside:avoid;border:1px solid ${borderAccent};border-radius:18px;padding:16px 16px 14px 16px;background:linear-gradient(180deg,#ffffff 0%,${alphaColor(accentColor, 0.025)} 100%);overflow:hidden;">
+              <div style="position:absolute;${transcriptDirection === "rtl" ? "left" : "right"}:16px;top:12px;font-size:40px;font-weight:800;letter-spacing:0.18em;color:${alphaColor(accentColor, 0.08)};text-transform:uppercase;">UB</div>
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;position:relative;">
+                <div style="min-width:0;max-width:70%;">
+                  <h3 style="margin:0 0 6px 0;color:${deepAccent};font-size:17px;line-height:1.4;">${labels.semester} ${formatSemesterNumber(semester.index, totalSemesters)}${semester.name ? ` - ${toTranscriptCell(semester.name, { inline: true, align: transcriptAlignment as "left" | "right" })}` : ""}${statusText}</h3>
+                  <p style="margin:0;color:${mixHex(accentColor, "#31473f", 0.4)};font-size:12px;font-weight:700;">${labels.semesterPercentage}: ${semester.percentage.toFixed(2)}%</p>
+                </div>
+                ${
+                  verificationBadge
+                    ? `<div style="display:flex;justify-content:${transcriptDirection === "rtl" ? "flex-start" : "flex-end"};align-items:flex-start;">${verificationBadge}</div>`
+                    : ""
+                }
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed;margin-top:12px;">
+                <colgroup>${colGroup}</colgroup>
                 <thead><tr>${headerCells}</tr></thead>
                 <tbody>${bodyRows}</tbody>
               </table>
@@ -2132,7 +2331,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
       renderHost.style.position = "fixed";
       renderHost.style.left = "-200vw";
       renderHost.style.top = "0";
-      renderHost.style.width = "850px";
+      renderHost.style.width = "760px";
       renderHost.style.background = "#ffffff";
       renderHost.style.opacity = "1";
       renderHost.style.pointerEvents = "none";
@@ -2140,29 +2339,43 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
 
       const container = document.createElement("div");
       container.className = "font-transcript";
-      container.style.padding = "20px";
+      container.style.padding = "0";
       container.style.background = "#ffffff";
       container.style.color = "#13211d";
-      container.style.width = "794px";
-      container.style.minHeight = "1123px";
+      container.style.width = "718px";
+      container.style.minHeight = "1046px";
       container.style.margin = "0 auto";
       container.style.direction = transcriptDirection;
       container.style.unicodeBidi = transcriptHasRtlContent ? "plaintext" : "normal";
       container.innerHTML = `
-        <div lang="${transcriptLanguage === "EN" ? "en" : transcriptLanguage === "FA" ? "fa" : "ps"}" style="font-family: 'Noto Naskh Arabic', Cairo, Vazirmatn, Amiri, Tahoma, sans-serif;text-align:${transcriptAlignment};direction:${transcriptDirection};">
-          <header style="background:linear-gradient(135deg,#0f5a49,#1f7a64);padding:18px;border-radius:14px;color:#fff;">
-            <h1 style="margin:0;font-size:24px;">${labels.title}</h1>
-            <p style="margin:8px 0 0 0;font-size:13px;">${labels.subtitle}</p>
-            <p style="margin:6px 0 0 0;font-size:12px;">${labels.generated}: ${escapeHtml(new Date().toLocaleString())}</p>
-            <p style="margin:6px 0 0 0;font-size:13px;">${labels.student}: ${toTranscriptCell(studentName)}</p>
+        <div lang="${transcriptLanguage === "EN" ? "en" : transcriptLanguage === "FA" ? "fa" : "ps"}" style="position:relative;font-family:'Noto Naskh Arabic', Cairo, Vazirmatn, Amiri, Tahoma, sans-serif;text-align:${transcriptAlignment};direction:${transcriptDirection};padding:20px 20px 18px 20px;">
+          <div style="position:absolute;${transcriptDirection === "rtl" ? "left" : "right"}:18px;top:166px;font-size:82px;font-weight:800;letter-spacing:0.24em;color:${alphaColor(accentColor, 0.055)};text-transform:uppercase;pointer-events:none;">UniBOOK</div>
+          <header style="position:relative;background:linear-gradient(135deg,${deepAccent},${accentColor} 62%,${headerHighlight});padding:20px;border-radius:22px;color:#fff;box-shadow:0 24px 50px ${alphaColor(accentColor, 0.2)};overflow:hidden;">
+            <div style="position:absolute;${transcriptDirection === "rtl" ? "left" : "right"}:-16px;top:-18px;width:140px;height:140px;border-radius:999px;background:${alphaColor("#ffffff", 0.09)};"></div>
+            <div style="position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+              ${buildTranscriptLogoHtml(accentColor, labels)}
+              <div style="min-width:0;max-width:48%;text-align:${transcriptAlignment};">
+                <p style="margin:0;font-size:11px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:${mixHex(accentColor, "#ffffff", 0.82)};">${labels.generated}</p>
+                <p style="margin:6px 0 0 0;font-size:12px;">${escapeHtml(new Date().toLocaleString())}</p>
+                <p style="margin:12px 0 0 0;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:${mixHex(accentColor, "#ffffff", 0.82)};">${labels.student}</p>
+                <p style="margin:6px 0 0 0;font-size:15px;font-weight:800;line-height:1.45;">${toTranscriptCell(studentName, { inline: true, align: transcriptAlignment as "left" | "right" })}</p>
+              </div>
+            </div>
+            <div style="position:relative;margin-top:18px;border-top:1px solid ${alphaColor("#ffffff", 0.16)};padding-top:14px;">
+              <h1 style="margin:0;font-size:24px;line-height:1.2;">${labels.title}</h1>
+              <p style="margin:8px 0 0 0;font-size:13px;color:${mixHex(accentColor, "#ffffff", 0.78)};">${labels.subtitle}</p>
+            </div>
           </header>
-          <section style="margin-top:16px;">
-            <h2 style="margin:0 0 8px 0;color:#154d3f;">${labels.studentInformation}</h2>
-            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <section style="position:relative;margin-top:18px;border:1px solid ${borderAccent};border-radius:20px;padding:16px;background:linear-gradient(180deg,#ffffff 0%,${panelAccent} 100%);">
+            <h2 style="margin:0 0 10px 0;color:${deepAccent};font-size:18px;">${labels.studentInformation}</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed;">
               <tbody>${infoTableRows}</tbody>
             </table>
           </section>
           ${semesterBlocks}
+          <footer style="margin-top:18px;padding-top:12px;border-top:1px solid ${borderAccent};font-size:10.5px;line-height:1.7;color:${mixHex(accentColor, "#33413b", 0.54)};text-align:center;">
+            <p style="margin:0;">${escapeHtml(labels.developedBy)}</p>
+          </footer>
         </div>
       `;
 
@@ -2185,8 +2398,8 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
             useCORS: true,
             logging: false,
             backgroundColor: "#ffffff",
-            windowWidth: 850,
-            windowHeight: Math.max(container.scrollHeight, 1123)
+            windowWidth: 760,
+            windowHeight: Math.max(container.scrollHeight, 1046)
           },
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
         })
@@ -2832,17 +3045,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                               <span className={`badge ${semester.status === "FINISHED" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-700"}`}>
                                 {semester.status}
                               </span>
-                              <span
-                                className={`badge ${
-                                  semester.verificationStatus === "APPROVED"
-                                    ? "border-sky-300 bg-sky-50 text-sky-700"
-                                    : semester.verificationStatus === "PENDING"
-                                      ? "border-amber-300 bg-amber-50 text-amber-700"
-                                      : "border-brand-300 bg-brand-50 text-brand-700"
-                                }`}
-                              >
-                                Verify: {semester.verificationStatus}
-                              </span>
+                              <VerificationBadge status={semester.verificationStatus} />
                               <span className="text-xs font-semibold text-brand-700">{semester.percentage.toFixed(2)}%</span>
                             </div>
                           </div>
@@ -3320,6 +3523,61 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                 </select>
               </Field>
 
+              <Field label="Transcript Accent Color">
+                <div className="space-y-3">
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {TRANSCRIPT_COLOR_PRESETS.map((preset) => {
+                      const isActive =
+                        sanitizeHexColor(transcriptOptions.themeColor) === sanitizeHexColor(preset.value);
+
+                      return (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          className={`flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition ${
+                            isActive
+                              ? "border-brand-500 bg-brand-50 shadow-[0_10px_24px_rgba(16,88,67,0.12)]"
+                              : "border-brand-200 bg-white hover:border-brand-300 hover:bg-brand-50/60"
+                          }`}
+                          onClick={() =>
+                            setTranscriptOptions((previous) => ({
+                              ...previous,
+                              themeColor: sanitizeHexColor(preset.value)
+                            }))
+                          }
+                        >
+                          <span
+                            className="h-6 w-6 rounded-full border border-white shadow-sm ring-1 ring-black/10"
+                            style={{ backgroundColor: preset.value }}
+                          />
+                          <span className="text-sm font-semibold text-brand-900">{preset.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <label className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50/70 px-3 py-3">
+                    <span className="text-sm font-semibold text-brand-900">Custom accent color</span>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={sanitizeHexColor(transcriptOptions.themeColor)}
+                        onChange={(event) =>
+                          setTranscriptOptions((previous) => ({
+                            ...previous,
+                            themeColor: sanitizeHexColor(event.target.value)
+                          }))
+                        }
+                        className="h-11 w-16 cursor-pointer rounded-xl border border-brand-200 bg-white p-1"
+                      />
+                      <span className="rounded-xl border border-brand-200 bg-white px-3 py-2 text-xs font-bold tracking-[0.18em] text-brand-700">
+                        {sanitizeHexColor(transcriptOptions.themeColor).toUpperCase()}
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </Field>
+
               <div className="grid gap-2 text-sm text-brand-900">
                 {(
                   [
@@ -3332,7 +3590,7 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                     ["showTeacher", "Show teacher"],
                     ["showCode", "Show subject code"],
                     ["showChance", "Show chance"]
-                  ] as Array<[Exclude<keyof TranscriptOptions, "language">, string]>
+                  ] as Array<[Exclude<keyof TranscriptOptions, "language" | "themeColor">, string]>
                 ).map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2">
                     <input
@@ -3708,6 +3966,9 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                             Semester {formatSemesterNumber(semester.index, totalSemesters)}
                             {semester.name ? ` - ${semester.name}` : ""}
                           </h3>
+                          <div className="mt-2">
+                            <VerificationBadge status={semester.verificationStatus} approvedLabel="Admin Verified" />
+                          </div>
                           <p className="text-sm text-brand-700">
                             Status: <strong>{semester.status}</strong> · Percentage: <strong>{semester.percentage.toFixed(2)}%</strong>
                             {semester.status === "ONGOING" ? " (excluded from overall)" : ""}
@@ -3731,9 +3992,10 @@ export default function DashboardClient({ initialUser }: DashboardClientProps) {
                       <div className="rounded-xl border border-brand-200 bg-brand-50 p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <p className="text-sm font-semibold text-brand-900">
-                              Marks Verification: {semester.verificationStatus}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold text-brand-900">Marks Verification</p>
+                              <VerificationBadge status={semester.verificationStatus} approvedLabel="Admin Verified" />
+                            </div>
                             <p className="text-xs text-brand-700">
                               Upload your official transcript image/PDF and request admin approval.
                             </p>

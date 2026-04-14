@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 
+import VerificationBadge from "@/components/verification-badge";
 import { toAssetUrl } from "@/lib/blob-url";
 
 type LectureMaterial = {
@@ -26,6 +27,7 @@ type Semester = {
   index: number;
   name: string | null;
   status: "ONGOING" | "FINISHED";
+  verificationStatus?: "NOT_REQUESTED" | "PENDING" | "APPROVED" | "REJECTED";
   percentage: number;
   subjects: Subject[];
 };
@@ -166,13 +168,20 @@ export default function FriendProfileClient({ userId }: FriendProfileClientProps
         ) : (
           data.semesters.map((semester) => (
             <article key={semester.id} className="panel">
-              <h3 className="text-lg font-bold text-brand-950">
-                Semester {semester.index}
-                {semester.name ? ` - ${semester.name}` : ""}
-              </h3>
-              <p className="text-sm text-brand-700">
-                Status: {semester.status} · Percentage: {semester.percentage.toFixed(2)}%
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold text-brand-950">
+                    Semester {semester.index}
+                    {semester.name ? ` - ${semester.name}` : ""}
+                  </h3>
+                  <p className="text-sm text-brand-700">
+                    Status: {semester.status} · Percentage: {semester.percentage.toFixed(2)}%
+                  </p>
+                </div>
+                {semester.verificationStatus ? (
+                  <VerificationBadge status={semester.verificationStatus} approvedLabel="Admin Verified" />
+                ) : null}
+              </div>
 
               <div className="mt-3 overflow-hidden rounded-lg border border-brand-200">
                 <table className="min-w-full divide-y divide-brand-200 text-sm">

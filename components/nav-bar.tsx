@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 
+import UniBookBrand from "@/components/unibook-brand";
 import { toAssetUrl } from "@/lib/blob-url";
 
 export default function NavBar() {
@@ -116,12 +117,7 @@ export default function NavBar() {
     <header className="sticky top-0 z-30 border-b border-brand-200/70 bg-white/80 backdrop-blur-xl">
       <div className="relative mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
         <Link href="/" className="group flex items-center gap-2">
-          <span className="rounded-xl bg-gradient-to-r from-brand-800 to-brand-600 px-2 py-1 text-xs font-black uppercase tracking-wider text-white">
-            UB
-          </span>
-          <span className="text-lg font-black tracking-tight text-brand-950 transition group-hover:text-brand-700">
-            UniBOOK
-          </span>
+          <UniBookBrand compact className="transition group-hover:scale-[1.01]" />
         </Link>
 
         <nav className="flex items-center gap-3 text-sm font-semibold text-brand-800">

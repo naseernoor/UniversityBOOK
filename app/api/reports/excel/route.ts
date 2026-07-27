@@ -12,6 +12,14 @@ type ValidationIssue = {
   message: string;
 };
 
+const REQUIRED_MARKS_HEADERS = [
+  "semesternumber",
+  "subjectname",
+  "credits",
+  "score",
+  "chance"
+] as const;
+
 const normalizeKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const toOptionalString = (value: unknown) => {
@@ -75,6 +83,61 @@ const parseLectureMaterials = (value: unknown) => {
 const semesterLabel = (index: number, totalSemesters: number) => {
   const padLength = String(Math.max(totalSemesters, 9)).length;
   return String(index).padStart(padLength, "0");
+};
+
+const getSheetHeaderKeys = (sheet: XLSX.WorkSheet) => {
+  const headerRows = XLSX.utils.sheet_to_json<Array<string | number | null>>(sheet, {
+    header: 1,
+    blankrows: false,
+    defval: null
+  });
+
+  const headerRow = headerRows.find((row) =>
+    row.some((cell) => {
+      if (typeof cell === "number") {
+        return true;
+      }
+      if (typeof cell === "string") {
+        return cell.trim().length > 0;
+      }
+      return false;
+    })
+  );
+
+  if (!headerRow) {
+    return [];
+  }
+
+  return headerRow
+    .map((cell) => {
+      if (typeof cell === "number") {
+        return normalizeKey(String(cell));
+      }
+      if (typeof cell === "string") {
+        return normalizeKey(cell);
+      }
+      return "";
+    })
+    .filter((key) => key.length > 0);
+};
+
+const findMarksSheet = (workbook: XLSX.WorkBook) => {
+  const namedSheet = workbook.SheetNames.find((sheetName) => normalizeKey(sheetName) === "marks");
+  if (namedSheet) {
+    return namedSheet;
+  }
+
+  return (
+    workbook.SheetNames.find((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) {
+        return false;
+      }
+
+      const headerKeys = new Set(getSheetHeaderKeys(sheet));
+      return REQUIRED_MARKS_HEADERS.every((header) => headerKeys.has(header));
+    }) ?? null
+  );
 };
 
 export async function GET() {
@@ -287,13 +350,23 @@ export async function POST(request: Request) {
 
   const buffer = Buffer.from(await maybeFile.arrayBuffer());
   const workbook = XLSX.read(buffer, { type: "buffer" });
-  const firstSheetName = workbook.SheetNames[0];
+  const marksSheetName = findMarksSheet(workbook);
 
-  if (!firstSheetName) {
+  if (workbook.SheetNames.length === 0) {
     return NextResponse.json({ error: "Excel file has no sheets" }, { status: 400 });
   }
 
-  const sheet = workbook.Sheets[firstSheetName];
+  if (!marksSheetName) {
+    return NextResponse.json(
+      {
+        error:
+          "Excel file must contain a Marks sheet with SemesterNumber, SubjectName, Credits, Score, and Chance columns"
+      },
+      { status: 400 }
+    );
+  }
+
+  const sheet = workbook.Sheets[marksSheetName];
   const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
 
   const issues: ValidationIssue[] = [];

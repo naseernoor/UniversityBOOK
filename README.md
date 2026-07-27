@@ -46,6 +46,7 @@ Full-stack university marks, transcript, friends, and social study platform buil
 Create `.env` from `.env.example` and set:
 
 - `DATABASE_URL` (PostgreSQL connection string)
+- `DIRECT_URL` (direct/session PostgreSQL connection string for Prisma schema operations)
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
 - `SUPER_ADMIN_EMAILS` (optional comma-separated emails to auto-assign `SUPER_ADMIN` role on sign-in)
@@ -83,9 +84,10 @@ npm run build
 1. Push project to GitHub.
 2. Import the repository in Vercel.
 3. In Vercel project settings, configure all required environment variables.
-4. Set `DATABASE_URL` to your production PostgreSQL instance.
-5. Set `BLOB_READ_WRITE_TOKEN` to enable persistent lecture/profile uploads.
-6. Deploy.
+4. Set `DATABASE_URL` to your pooled production PostgreSQL instance.
+5. Set `DIRECT_URL` to your direct/session PostgreSQL instance for Prisma schema operations.
+6. Set `BLOB_READ_WRITE_TOKEN` to enable persistent lecture/profile uploads.
+7. Deploy.
 
 ### Recommended production flow
 

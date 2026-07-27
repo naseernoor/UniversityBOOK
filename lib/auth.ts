@@ -6,6 +6,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 
 import { sendTwoFactorCode } from "@/lib/email";
+import { isMissingAnyLegacyUserFieldError } from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 import { getSuperAdminEmails } from "@/lib/roles";
 import { consumeTwoFactorCode, createTwoFactorCode } from "@/lib/tokens";
@@ -23,18 +24,75 @@ const providers: NextAuthOptions["providers"] = [
         return null;
       }
 
-      const user = await prisma.user.findUnique({
-        where: {
-          email: credentials.email.toLowerCase()
-        },
-        include: {
-          profile: {
-            select: {
-              firstName: true
+      let user:
+        | {
+            id: string;
+            name: string | null;
+            email: string | null;
+            image: string | null;
+            emailVerified: Date | null;
+            passwordHash: string | null;
+            username?: string | null;
+            role?: "USER" | "ADMIN" | "SUPER_ADMIN";
+            isBlueVerified?: boolean;
+            twoFactorEnabled?: boolean;
+            twoFactorMethod?: "EMAIL" | "PHONE";
+            twoFactorPhone?: string | null;
+            profile: {
+              firstName: string;
+            } | null;
+          }
+        | null;
+
+      try {
+        user = await prisma.user.findUnique({
+          where: {
+            email: credentials.email.toLowerCase()
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            emailVerified: true,
+            passwordHash: true,
+            username: true,
+            role: true,
+            isBlueVerified: true,
+            twoFactorEnabled: true,
+            twoFactorMethod: true,
+            twoFactorPhone: true,
+            profile: {
+              select: {
+                firstName: true
+              }
             }
           }
+        });
+      } catch (error) {
+        if (!isMissingAnyLegacyUserFieldError(error)) {
+          throw error;
         }
-      });
+
+        user = await prisma.user.findUnique({
+          where: {
+            email: credentials.email.toLowerCase()
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            emailVerified: true,
+            passwordHash: true,
+            profile: {
+              select: {
+                firstName: true
+              }
+            }
+          }
+        });
+      }
 
       if (!user?.passwordHash) {
         return null;
@@ -56,7 +114,7 @@ const providers: NextAuthOptions["providers"] = [
         if (!twoFactorCode) {
           const code = await createTwoFactorCode(user.id);
           await sendTwoFactorCode({
-            method: user.twoFactorMethod,
+            method: user.twoFactorMethod ?? "EMAIL",
             code,
             toEmail: user.email,
             toPhone: user.twoFactorPhone,
@@ -80,9 +138,9 @@ const providers: NextAuthOptions["providers"] = [
         name: user.name,
         email: user.email,
         image: user.image,
-        username: user.username,
-        role: user.role,
-        isBlueVerified: user.isBlueVerified
+        username: user.username ?? null,
+        role: user.role ?? "USER",
+        isBlueVerified: Boolean(user.isBlueVerified)
       };
     }
   })
@@ -125,27 +183,55 @@ export const authOptions: NextAuthOptions = {
       }
 
       if (token.email) {
-        const dbUser = await prisma.user.findUnique({
-          where: {
-            email: token.email
-          },
-          select: {
-            id: true,
-            username: true,
-            name: true,
-            image: true,
-            role: true,
-            isBlueVerified: true
+        let dbUser:
+          | {
+              id: string;
+              username?: string | null;
+              name: string | null;
+              image: string | null;
+              role?: "USER" | "ADMIN" | "SUPER_ADMIN";
+              isBlueVerified?: boolean;
+            }
+          | null;
+
+        try {
+          dbUser = await prisma.user.findUnique({
+            where: {
+              email: token.email
+            },
+            select: {
+              id: true,
+              username: true,
+              name: true,
+              image: true,
+              role: true,
+              isBlueVerified: true
+            }
+          });
+        } catch (error) {
+          if (!isMissingAnyLegacyUserFieldError(error)) {
+            throw error;
           }
-        });
+
+          dbUser = await prisma.user.findUnique({
+            where: {
+              email: token.email
+            },
+            select: {
+              id: true,
+              name: true,
+              image: true
+            }
+          });
+        }
 
         if (dbUser) {
           token.id = dbUser.id;
           token.username = dbUser.username ?? undefined;
           token.name = dbUser.name ?? token.name;
           token.picture = dbUser.image ?? token.picture;
-          token.role = dbUser.role;
-          token.isBlueVerified = dbUser.isBlueVerified;
+          token.role = dbUser.role ?? "USER";
+          token.isBlueVerified = Boolean(dbUser.isBlueVerified);
         }
       }
 
@@ -166,16 +252,32 @@ export const authOptions: NextAuthOptions = {
         const superAdmins = getSuperAdminEmails();
         const nextRole = superAdmins.includes(user.email.toLowerCase()) ? "SUPER_ADMIN" : undefined;
 
-        await prisma.user.update({
-          where: {
-            email: user.email
-          },
-          data: {
-            name: user.name ?? undefined,
-            ...(nextRole ? { role: nextRole } : {}),
-            ...(account?.provider !== "credentials" ? { emailVerified: new Date() } : {})
+        try {
+          await prisma.user.update({
+            where: {
+              email: user.email
+            },
+            data: {
+              name: user.name ?? undefined,
+              ...(nextRole ? { role: nextRole } : {}),
+              ...(account?.provider !== "credentials" ? { emailVerified: new Date() } : {})
+            }
+          });
+        } catch (error) {
+          if (!isMissingAnyLegacyUserFieldError(error)) {
+            throw error;
           }
-        });
+
+          await prisma.user.update({
+            where: {
+              email: user.email
+            },
+            data: {
+              name: user.name ?? undefined,
+              ...(account?.provider !== "credentials" ? { emailVerified: new Date() } : {})
+            }
+          });
+        }
       }
       return true;
     }

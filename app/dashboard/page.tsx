@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 
 import DashboardClient from "@/components/dashboard-client";
 import { getServerAuthSession } from "@/lib/auth";
-import { isMissingProfileGenderError, legacyProfileSelect } from "@/lib/db-compat";
+import {
+  isMissingLegacyUserOrProfileFieldError,
+  legacyProfileSelect
+} from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 
 export default async function DashboardPage() {
@@ -30,7 +33,7 @@ export default async function DashboardPage() {
       }
     });
   } catch (error) {
-    if (!isMissingProfileGenderError(error)) {
+    if (!isMissingLegacyUserOrProfileFieldError(error)) {
       throw error;
     }
 
@@ -41,10 +44,7 @@ export default async function DashboardPage() {
       select: {
         id: true,
         email: true,
-        username: true,
         image: true,
-        role: true,
-        isBlueVerified: true,
         profile: {
           select: legacyProfileSelect
         }
@@ -60,5 +60,20 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
-  return <DashboardClient initialUser={user} />;
+  const normalizedUser = {
+    ...user,
+    username: typeof (user as { username?: unknown }).username === "string"
+      ? (user as { username?: string | null }).username ?? null
+      : null,
+    role: typeof (user as { role?: unknown }).role === "string"
+      ? ((user as { role?: "USER" | "ADMIN" | "SUPER_ADMIN" | null }).role ?? "USER")
+      : "USER",
+    isBlueVerified: Boolean((user as { isBlueVerified?: unknown }).isBlueVerified)
+  };
+
+  return (
+    <DashboardClient
+      initialUser={normalizedUser}
+    />
+  );
 }

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
 import {
+  isMissingAnyLegacyUserFieldError,
   isMissingProfileGenderError,
   legacyProfileSelect,
   stripGenderField
@@ -43,7 +44,7 @@ export async function GET() {
       }
     });
   } catch (error) {
-    if (!isMissingProfileGenderError(error)) {
+    if (!isMissingProfileGenderError(error) && !isMissingAnyLegacyUserFieldError(error)) {
       throw error;
     }
 
@@ -54,11 +55,8 @@ export async function GET() {
       select: {
         id: true,
         email: true,
-        username: true,
         name: true,
         image: true,
-        role: true,
-        isBlueVerified: true,
         profile: {
           select: legacyProfileSelect
         }
@@ -70,7 +68,22 @@ export async function GET() {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ user });
+  const normalizedUser = {
+    ...user,
+    username:
+      typeof (user as { username?: unknown }).username === "string"
+        ? (user as { username?: string | null }).username ?? null
+        : null,
+    role:
+      typeof (user as { role?: unknown }).role === "string"
+        ? ((user as { role?: "USER" | "ADMIN" | "SUPER_ADMIN" | null }).role ?? "USER")
+        : "USER",
+    isBlueVerified: Boolean((user as { isBlueVerified?: unknown }).isBlueVerified)
+  };
+
+  return NextResponse.json({
+    user: normalizedUser
+  });
 }
 
 export async function PUT(request: Request) {

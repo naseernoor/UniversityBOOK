@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isMissingAnyLegacyUserFieldError } from "@/lib/db-compat";
 import { sendPasswordResetEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { createPasswordResetToken } from "@/lib/tokens";
@@ -18,18 +19,46 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = await prisma.user.findUnique({
-      where: {
-        email
-      },
-      include: {
-        profile: {
-          select: {
-            firstName: true
+    let user:
+      | {
+          name: string | null;
+          passwordHash: string | null;
+          profile?: {
+            firstName: string;
+          } | null;
+        }
+      | null;
+
+    try {
+      user = await prisma.user.findUnique({
+        where: {
+          email
+        },
+        select: {
+          name: true,
+          passwordHash: true,
+          profile: {
+            select: {
+              firstName: true
+            }
           }
         }
+      });
+    } catch (error) {
+      if (!isMissingAnyLegacyUserFieldError(error)) {
+        throw error;
       }
-    });
+
+      user = await prisma.user.findUnique({
+        where: {
+          email
+        },
+        select: {
+          name: true,
+          passwordHash: true
+        }
+      });
+    }
 
     if (user?.passwordHash) {
       const token = await createPasswordResetToken(email);

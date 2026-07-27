@@ -105,7 +105,7 @@ export default function RegisterForm() {
 
         if (data.available) {
           setUsernameStatus("available");
-          setUsernameMessage("Username is available");
+          setUsernameMessage(data.message ?? "Username is available");
           return;
         }
 

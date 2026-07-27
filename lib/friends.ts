@@ -1,3 +1,4 @@
+import { isMissingAnyLegacyUserFieldError } from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 
 export const getAcceptedFriendIds = async (userId: string): Promise<string[]> => {
@@ -24,31 +25,67 @@ export const getAcceptedFriends = async (userId: string) => {
     return [];
   }
 
-  return prisma.user.findMany({
-    where: {
-      id: {
-        in: friendIds
-      }
-    },
-    select: {
-      id: true,
-      name: true,
-      username: true,
-      email: true,
-      image: true,
-      isBlueVerified: true,
-      profile: {
-        select: {
-          firstName: true,
-          lastName: true,
-          university: true
+  try {
+    return await prisma.user.findMany({
+      where: {
+        id: {
+          in: friendIds
         }
+      },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        image: true,
+        isBlueVerified: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true,
+            university: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
       }
-    },
-    orderBy: {
-      createdAt: "desc"
+    });
+  } catch (error) {
+    if (!isMissingAnyLegacyUserFieldError(error)) {
+      throw error;
     }
-  });
+
+    const friends = await prisma.user.findMany({
+      where: {
+        id: {
+          in: friendIds
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true,
+        profile: {
+          select: {
+            firstName: true,
+            lastName: true,
+            university: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
+
+    return friends.map((friend) => ({
+      ...friend,
+      username: null,
+      isBlueVerified: false
+    }));
+  }
 };
 
 export const getRelationshipStatus = async (currentUserId: string, targetUserId: string) => {

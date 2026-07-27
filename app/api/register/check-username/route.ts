@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isMissingUserFieldError } from "@/lib/db-compat";
 import { prisma } from "@/lib/prisma";
 
 const usernameRegex = /^[\p{L}\p{N}_.-]+$/u;
@@ -24,14 +25,28 @@ export async function GET(request: Request) {
 
   const normalized = usernameInput.toLowerCase();
 
-  const existing = await prisma.user.findUnique({
-    where: {
-      username: normalized
-    },
-    select: {
-      id: true
+  let existing: { id: string } | null = null;
+
+  try {
+    existing = await prisma.user.findUnique({
+      where: {
+        username: normalized
+      },
+      select: {
+        id: true
+      }
+    });
+  } catch (error) {
+    if (!isMissingUserFieldError(error, "username")) {
+      throw error;
     }
-  });
+
+    return NextResponse.json({
+      available: true,
+      normalized,
+      message: "Username checks are temporarily limited on this deployment. You can continue."
+    });
+  }
 
   return NextResponse.json({
     available: !existing,

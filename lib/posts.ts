@@ -1,6 +1,7 @@
 import { PostReactionType, PostVisibility, Prisma } from "@prisma/client";
 
 import { calculateSemesterPercentage } from "@/lib/calculations";
+import { isMissingAnyLegacyUserFieldError } from "@/lib/db-compat";
 import { getAcceptedFriendIds } from "@/lib/friends";
 import { prisma } from "@/lib/prisma";
 
@@ -111,8 +112,108 @@ const postInclude = {
   }
 } satisfies Prisma.PostInclude;
 
+const legacyPostInclude = {
+  user: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      profile: {
+        select: {
+          firstName: true,
+          lastName: true,
+          university: true
+        }
+      }
+    }
+  },
+  likes: {
+    select: {
+      userId: true,
+      reactionType: true
+    }
+  },
+  media: {
+    orderBy: {
+      createdAt: "asc"
+    }
+  },
+  mentions: {
+    include: {
+      mentionedUser: {
+        select: {
+          id: true,
+          email: true,
+          image: true,
+          profile: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          }
+        }
+      }
+    }
+  },
+  comments: {
+    orderBy: {
+      createdAt: "asc"
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          image: true,
+          profile: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          }
+        }
+      },
+      reactions: {
+        select: {
+          userId: true,
+          reactionType: true
+        }
+      },
+      mentions: {
+        include: {
+          mentionedUser: {
+            select: {
+              id: true,
+              email: true
+            }
+          }
+        }
+      }
+    },
+    take: 240
+  },
+  sharedSemesters: {
+    include: {
+      semester: {
+        include: {
+          subjects: {
+            orderBy: {
+              createdAt: "asc"
+            }
+          }
+        }
+      }
+    }
+  }
+} satisfies Prisma.PostInclude;
+
 type PostWithRelations = Prisma.PostGetPayload<{
   include: typeof postInclude;
+}>;
+
+type LegacyPostWithRelations = Prisma.PostGetPayload<{
+  include: typeof legacyPostInclude;
 }>;
 
 const buildReactionSummary = (likes: Array<{ reactionType: PostReactionType }>) => {
@@ -254,34 +355,101 @@ const mapPost = (post: PostWithRelations, viewerId: string) => {
   };
 };
 
+const normalizeLegacyPost = (post: LegacyPostWithRelations): PostWithRelations =>
+  ({
+    ...post,
+    user: {
+      ...post.user,
+      username: null,
+      role: "USER",
+      isBlueVerified: false
+    },
+    mentions: post.mentions.map((mention) => ({
+      ...mention,
+      mentionedUser: {
+        ...mention.mentionedUser,
+        username: null,
+        isBlueVerified: false
+      }
+    })),
+    comments: post.comments.map((comment) => ({
+      ...comment,
+      user: {
+        ...comment.user,
+        username: null,
+        role: "USER",
+        isBlueVerified: false
+      },
+      mentions: comment.mentions.map((mention) => ({
+        ...mention,
+        mentionedUser: {
+          ...mention.mentionedUser,
+          username: null
+        }
+      }))
+    }))
+  }) as PostWithRelations;
+
 export const getFeedPosts = async (viewerId: string) => {
   const friendIds = await getAcceptedFriendIds(viewerId);
 
-  const posts = await prisma.post.findMany({
-    where: {
-      OR: [
-        {
-          userId: viewerId
-        },
-        {
-          visibility: "PUBLIC"
-        },
-        {
-          visibility: "FRIENDS",
-          userId: {
-            in: friendIds
+  try {
+    const posts = await prisma.post.findMany({
+      where: {
+        OR: [
+          {
+            userId: viewerId
+          },
+          {
+            visibility: "PUBLIC"
+          },
+          {
+            visibility: "FRIENDS",
+            userId: {
+              in: friendIds
+            }
           }
-        }
-      ]
-    },
-    include: postInclude,
-    orderBy: {
-      createdAt: "desc"
-    },
-    take: 80
-  });
+        ]
+      },
+      include: postInclude,
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: 80
+    });
 
-  return posts.map((post) => mapPost(post, viewerId));
+    return posts.map((post) => mapPost(post, viewerId));
+  } catch (error) {
+    if (!isMissingAnyLegacyUserFieldError(error)) {
+      throw error;
+    }
+
+    const posts = await prisma.post.findMany({
+      where: {
+        OR: [
+          {
+            userId: viewerId
+          },
+          {
+            visibility: "PUBLIC"
+          },
+          {
+            visibility: "FRIENDS",
+            userId: {
+              in: friendIds
+            }
+          }
+        ]
+      },
+      include: legacyPostInclude,
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: 80
+    });
+
+    return posts.map((post) => mapPost(normalizeLegacyPost(post), viewerId));
+  }
 };
 
 export const canViewPost = async (viewerId: string, postId: string) => {
@@ -338,12 +506,29 @@ export const canViewPost = async (viewerId: string, postId: string) => {
 };
 
 export const getPostByIdForViewer = async (postId: string, viewerId: string) => {
-  const post = await prisma.post.findUnique({
-    where: {
-      id: postId
-    },
-    include: postInclude
-  });
+  let post: PostWithRelations | null = null;
+
+  try {
+    post = await prisma.post.findUnique({
+      where: {
+        id: postId
+      },
+      include: postInclude
+    });
+  } catch (error) {
+    if (!isMissingAnyLegacyUserFieldError(error)) {
+      throw error;
+    }
+
+    const legacyPost = await prisma.post.findUnique({
+      where: {
+        id: postId
+      },
+      include: legacyPostInclude
+    });
+
+    post = legacyPost ? normalizeLegacyPost(legacyPost) : null;
+  }
 
   if (!post) {
     return null;
@@ -356,4 +541,3 @@ export const getPostByIdForViewer = async (postId: string, viewerId: string) => 
 
   return mapPost(post, viewerId);
 };
-

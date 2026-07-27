@@ -22,6 +22,7 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [resendingVerification, setResendingVerification] = useState(false);
   const [providers, setProviders] = useState<AuthProvider[]>([]);
+  const hasSocialProviders = providers.length > 0;
 
   const showRegistrationHint = useMemo(
     () => searchParams.get("registered") === "1",
@@ -118,7 +119,9 @@ export default function LoginForm() {
       <div className="panel">
         <h1 className="mb-2 text-2xl font-semibold text-brand-900">Welcome back</h1>
         <p className="mb-5 text-sm text-brand-700">
-          Login with your email/password or continue using Google/Apple.
+          {hasSocialProviders
+            ? "Login with your email/password or continue using Google/Apple."
+            : "Login with your email and password to continue."}
         </p>
 
         <form className="space-y-3" onSubmit={handleCredentialsLogin}>

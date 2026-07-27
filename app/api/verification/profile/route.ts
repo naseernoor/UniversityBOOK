@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerAuthSession } from "@/lib/auth";
+import { isMissingAnyLegacyUserFieldError } from "@/lib/db-compat";
 import { notifyAdmins } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { profileVerificationRequestSchema } from "@/lib/validators";
@@ -32,15 +33,30 @@ export async function GET() {
     take: 20
   });
 
-  const user = await prisma.user.findUnique({
-    where: {
-      id: session.user.id
-    },
-    select: {
-      isBlueVerified: true,
-      blueVerifiedAt: true
+  let user:
+    | {
+        isBlueVerified?: boolean;
+        blueVerifiedAt?: Date | null;
+      }
+    | null;
+
+  try {
+    user = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        isBlueVerified: true,
+        blueVerifiedAt: true
+      }
+    });
+  } catch (error) {
+    if (!isMissingAnyLegacyUserFieldError(error)) {
+      throw error;
     }
-  });
+
+    user = null;
+  }
 
   return NextResponse.json({
     isBlueVerified: Boolean(user?.isBlueVerified),

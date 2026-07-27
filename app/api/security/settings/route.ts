@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isMissingAnyLegacyUserFieldError } from "@/lib/db-compat";
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { securitySettingsSchema } from "@/lib/validators";
@@ -11,25 +12,62 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: {
-      id: session.user.id
-    },
-    select: {
-      email: true,
-      pendingEmail: true,
-      twoFactorEnabled: true,
-      twoFactorMethod: true,
-      twoFactorPhone: true,
-      profile: {
-        select: {
-          profileVisibility: true,
-          allowFriendRequests: true,
-          defaultPostVisibility: true
+  let user:
+    | {
+        email: string | null;
+        pendingEmail?: string | null;
+        twoFactorEnabled?: boolean;
+        twoFactorMethod?: "EMAIL" | "PHONE";
+        twoFactorPhone?: string | null;
+        profile: {
+          profileVisibility: "PUBLIC" | "FRIENDS" | "PRIVATE";
+          allowFriendRequests: boolean;
+          defaultPostVisibility: "FRIENDS" | "PUBLIC";
+        } | null;
+      }
+    | null;
+
+  try {
+    user = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        email: true,
+        pendingEmail: true,
+        twoFactorEnabled: true,
+        twoFactorMethod: true,
+        twoFactorPhone: true,
+        profile: {
+          select: {
+            profileVisibility: true,
+            allowFriendRequests: true,
+            defaultPostVisibility: true
+          }
         }
       }
+    });
+  } catch (error) {
+    if (!isMissingAnyLegacyUserFieldError(error)) {
+      throw error;
     }
-  });
+
+    user = await prisma.user.findUnique({
+      where: {
+        id: session.user.id
+      },
+      select: {
+        email: true,
+        profile: {
+          select: {
+            profileVisibility: true,
+            allowFriendRequests: true,
+            defaultPostVisibility: true
+          }
+        }
+      }
+    });
+  }
 
   if (!user?.profile) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
@@ -38,10 +76,10 @@ export async function GET() {
   return NextResponse.json({
     settings: {
       email: user.email,
-      pendingEmail: user.pendingEmail,
-      twoFactorEnabled: user.twoFactorEnabled,
-      twoFactorMethod: user.twoFactorMethod,
-      twoFactorPhone: user.twoFactorPhone,
+      pendingEmail: user.pendingEmail ?? null,
+      twoFactorEnabled: Boolean(user.twoFactorEnabled),
+      twoFactorMethod: user.twoFactorMethod ?? "EMAIL",
+      twoFactorPhone: user.twoFactorPhone ?? null,
       profileVisibility: user.profile.profileVisibility,
       allowFriendRequests: user.profile.allowFriendRequests,
       defaultPostVisibility: user.profile.defaultPostVisibility

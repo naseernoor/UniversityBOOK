@@ -1,7 +1,11 @@
 import { hash } from "bcryptjs";
 import { NextResponse } from "next/server";
 
-import { isMissingProfileGenderError, stripGenderField } from "@/lib/db-compat";
+import {
+  isMissingProfileGenderError,
+  isMissingUserFieldError,
+  stripGenderField
+} from "@/lib/db-compat";
 import { sendVerificationEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { createEmailVerificationToken } from "@/lib/tokens";
@@ -26,16 +30,40 @@ export async function POST(request: Request) {
     const email = data.email.toLowerCase();
     const username = data.username.toLowerCase();
 
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [{ email }, { username }]
-      },
-      select: {
-        id: true,
-        email: true,
-        username: true
+    let existingUser:
+      | {
+          id: string;
+          email: string | null;
+          username?: string | null;
+        }
+      | null;
+
+    try {
+      existingUser = await prisma.user.findFirst({
+        where: {
+          OR: [{ email }, { username }]
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true
+        }
+      });
+    } catch (error) {
+      if (!isMissingUserFieldError(error, "username")) {
+        throw error;
       }
-    });
+
+      existingUser = await prisma.user.findFirst({
+        where: {
+          email
+        },
+        select: {
+          id: true,
+          email: true
+        }
+      });
+    }
 
     if (existingUser) {
       const field = existingUser.email === email ? "Email" : "Username";
@@ -63,7 +91,6 @@ export async function POST(request: Request) {
     const createInput = {
       data: {
         email,
-        username,
         passwordHash,
         name: `${data.firstName} ${data.lastName}`,
         profile: {
@@ -72,27 +99,43 @@ export async function POST(request: Request) {
       },
       select: {
         id: true,
-        email: true,
-        username: true
+        email: true
       }
     } as const;
 
     let user;
 
     try {
-      user = await prisma.user.create(createInput);
-    } catch (error) {
-      if (!isMissingProfileGenderError(error)) {
-        throw error;
-      }
-
       user = await prisma.user.create({
         ...createInput,
         data: {
           ...createInput.data,
+          username
+        },
+        select: {
+          ...createInput.select,
+          username: true
+        }
+      });
+    } catch (error) {
+      if (!isMissingProfileGenderError(error) && !isMissingUserFieldError(error, "username")) {
+        throw error;
+      }
+
+      const shouldStripGender = isMissingProfileGenderError(error);
+      const shouldStripUsername = isMissingUserFieldError(error, "username");
+
+      user = await prisma.user.create({
+        data: {
+          ...createInput.data,
+          ...(shouldStripUsername ? {} : { username }),
           profile: {
-            create: stripGenderField(profileCreateData)
+            create: shouldStripGender ? stripGenderField(profileCreateData) : profileCreateData
           }
+        },
+        select: {
+          ...createInput.select,
+          ...(shouldStripUsername ? {} : { username: true })
         }
       });
     }
